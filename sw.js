@@ -2,7 +2,7 @@
 // Sempre busca a versão nova no servidor; o cache só é usado sem internet.
 // Por isso o nome do cache não precisa mudar a cada versão: a troca de versão
 // é controlada por versao.json (ver README › Controle de versões).
-const CACHE = 'adesoes-arp';
+const CACHE = 'gestao-consorcio';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));

@@ -1,4 +1,8 @@
-# SOFT+ GOV · Controle de Adesões às Atas de Registro de Preços (CIMOP)
+# SOFT+ GOV · Gestão de Consórcio (CIMOP)
+
+Sistema de gestão do consórcio público. Primeiro módulo: **controle de adesões às Atas de Registro de Preços**; outros módulos entram aos poucos.
+
+## Módulo: adesões às ARPs
 
 Sistema para controlar as adesões de órgãos não participantes às Atas de Registro de Preços do CIMOP:
 limites de **50% por órgão (CNPJ)** e do **dobro por item** (art. 86, §§ 4º e 5º, da Lei nº 14.133/2021;

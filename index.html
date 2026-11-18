@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta name="theme-color" content="#0d4fc4">
 <meta name="color-scheme" content="light">
-<title>SOFT+ GOV · Controle de Adesões às ARPs</title>
+<title>SOFT+ GOV · Gestão de Consórcio</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -25,14 +25,14 @@
   setTimeout(function () { document.documentElement.classList.add('estilo-ok'); }, 6000);
   // CONTROLE DE VERSÕES: versao.json é a única fonte da versão; os arquivos entram com ?v=<versão>.
   (function () {
-    function lembrada() { try { return localStorage.getItem('adesoes_versao') || '0'; } catch (e) { return '0'; } }
+    function lembrada() { try { return localStorage.getItem('gestao_consorcio_versao') || '0'; } catch (e) { return '0'; } }
     fetch('versao.json?t=' + Date.now(), { cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .catch(function () { return { versao: lembrada(), notas: [] }; })
       .then(function (v) {
         window.VERSAO_APP = v.versao;
         window.NOTAS_VERSAO = v.notas || [];
-        try { localStorage.setItem('adesoes_versao', v.versao); } catch (e) {}
+        try { localStorage.setItem('gestao_consorcio_versao', v.versao); } catch (e) {}
         var q = '?v=' + encodeURIComponent(v.versao);
         ['css/estilos.css', 'css/adesoes.css'].forEach(function (h, i) {
           var css = document.createElement('link'); css.rel = 'stylesheet'; css.href = h + q;
@@ -69,8 +69,8 @@
       <img src="logo-softgov.png" alt="" width="64" height="64" class="marca-simbolo">
       <span class="marca-nome">SOFT<span class="marca-mais">+</span> GOV</span>
     </div>
-    <h1>Controle de Adesões às Atas de Registro de Preços</h1>
-    <p>Saldos das atas, limites de 50% por órgão e do dobro por item, e ofício de autorização em Word gerado automaticamente.</p>
+    <h1>Gestão de Consórcio</h1>
+    <p>Gestão do consórcio público, começando pelo controle de adesões às Atas de Registro de Preços: saldos, limites de 50% por órgão e do dobro por item, e ofício em Word gerado automaticamente.</p>
     <ul class="lista-marca">
       <li>Importação das atas e itens por planilha-modelo</li>
       <li>Conferência automática do art. 86, §§ 4º e 5º, da Lei nº 14.133/2021</li>
@@ -128,7 +128,7 @@
     </div>
   </header>
   <main id="conteudo-publico" class="limite-publico conteudo-publico" tabindex="-1"></main>
-  <footer class="rodape-publico"><div class="limite-publico">Sistema de adesões às Atas de Registro de Preços · SOFT<span class="marca-mais">+</span> GOV</div></footer>
+  <footer class="rodape-publico"><div class="limite-publico">Gestão de Consórcio · SOFT<span class="marca-mais">+</span> GOV</div></footer>
 </section>
 
 <section id="tela-painel" class="tela tela-painel" hidden>
@@ -149,7 +149,7 @@
     <header class="topo">
       <button type="button" class="btn-menu" id="btn-menu" aria-label="Abrir menu" aria-expanded="false">☰</button>
       <div class="topo-orgao">
-        <span class="topo-orgao-nome" id="topo-orgao-nome">CIMOP · Controle de Adesões às ARPs</span>
+        <span class="topo-orgao-nome" id="topo-orgao-nome">CIMOP · Gestão de Consórcio</span>
         <span class="topo-orgao-perfil" id="topo-orgao-perfil"></span>
       </div>
       <button type="button" class="btn btn-primario" id="btn-topo-novo">+ Novo pedido</button>

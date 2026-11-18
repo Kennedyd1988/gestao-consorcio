@@ -1,6 +1,6 @@
 {
-  "name": "SOFT+ GOV · Adesões às ARPs",
-  "short_name": "Adesões ARP",
+  "name": "SOFT+ GOV · Gestão de Consórcio",
+  "short_name": "Gestão Consórcio",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -25,5 +25,5 @@
       "purpose": "maskable"
     }
   ],
-  "description": "Controle de adesões às Atas de Registro de Preços"
+  "description": "Gestão de consórcio público: adesões às Atas de Registro de Preços e demais módulos"
 }

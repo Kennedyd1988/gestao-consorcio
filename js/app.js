@@ -1,5 +1,5 @@
 // =====================================================================
-// SOFT+ GOV · Controle de Adesões às Atas de Registro de Preços (CIMOP)
+// SOFT+ GOV · Gestão de Consórcio (CIMOP) — módulo de adesões às Atas de Registro de Preços
 // Núcleo do painel no padrão SOFT+ (mesmas peças do painel do Portal PNTP).
 // =====================================================================
 (function () {
@@ -360,7 +360,7 @@
     const ultimos = [...b.pedidos].filter((p) => p.origem !== 'migracao').sort((x, y) => (y.criado_em || '').localeCompare(x.criado_em || '')).slice(0, 8);
     const nome = (estado.usuario.nome || '').split(' ')[0];
     rc(c, 
-      cabecalho(nome ? 'Olá, ' + nome : 'Início', 'Controle de adesões às Atas de Registro de Preços do CIMOP', podeEditar() ? el('a', { class: 'btn btn-primario', href: '#novo' }, '+ Novo pedido de adesão') : null),
+      cabecalho(nome ? 'Olá, ' + nome : 'Início', 'Gestão de Consórcio · adesões às Atas de Registro de Preços', podeEditar() ? el('a', { class: 'btn btn-primario', href: '#novo' }, '+ Novo pedido de adesão') : null),
       el('div', { class: 'resumo-pntp' },
         el('div', null, el('span', { class: 'rotulo' }, 'Atas vigentes'), el('strong', { class: 'num-grande' }, vigentes.length), el('small', null, b.atas.length + ' cadastrada(s)')),
         el('div', null, el('span', { class: 'rotulo' }, 'Pedidos em ' + ano), el('strong', { class: 'num-grande' }, pedAno.length),
