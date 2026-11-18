@@ -1,7 +1,8 @@
 {
-  "versao": "0.5.1",
+  "versao": "0.5.2",
   "data": "2026-11-17",
   "notas": [
+    "Mapa de adesões: cada item vem recolhido, numa linha só, com uma seta que abre os órgãos que aderiram. O botão \"Expandir todos\" abre tudo de uma vez.",
     "Mapa de adesões refeito em cartões: cada item mostra registrado, aderido e uso do dobro, com um cartão por órgão (ou por ofício) com a quantidade e quanto ele já usou dos 50%. Não há mais rolagem para o lado, e abaixo fica o valor autorizado por órgão com a participação de cada um. Telefone do formulário com máscara (84) 99999-9999.",
     "Atualizações do PNCP: toda madrugada (e pelo botão \"Buscar agora\") o sistema consulta as atas do CIMOP no PNCP, lê os termos aditivos publicados e mostra o que mudou: ata nova (com itens e preços do resultado), prorrogação com ou sem renovação dos quantitativos, novo preço por reequilíbrio e cancelamento. Cada atualização é conferida e só entra no sistema depois de \"Confirmar\". Rode o script 04 na Supabase e publique a função consorcio-pncp.",
     "Atas prorrogadas: cada ata tem a aba \"Vigências e prorrogações\". Quando o termo aditivo renova os quantitativos, começa um novo ciclo e os limites de 50% e do dobro contam só as adesões do novo período (o saldo anterior não se soma); dá para consultar o ciclo anterior. Pedido com data fora da vigência é negado. Rode o script 03 na Supabase.",

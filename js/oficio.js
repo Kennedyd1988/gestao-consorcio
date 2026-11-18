@@ -158,5 +158,5 @@
     return `${n}. ${sit} - Pregão ${atas} - ${(d.orgao.municipio || d.orgao.nome).replace(/[\\/:*?"<>|]/g, '')}${d.orgao.uf ? '-' + d.orgao.uf : ''}.docx`;
   }
 
-  window.OFICIO = { gerarDocx, nomeArquivo, formatarCnpj, corpo };
+  window.OFICIO = { gerarDocx, nomeArquivo, formatarCnpj, corpo, vocativo };
 })();

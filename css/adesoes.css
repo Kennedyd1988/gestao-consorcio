@@ -241,3 +241,17 @@ a.mapa-pill.uso-excedido .mapa-pill-uso small { color: #8f2626; font-weight: 700
   .mapa-linha-uso, .mapa-linha-topo .btn-aderentes { grid-column: 2; justify-self: start; }
   .mapa-linha-uso { width: 100%; max-width: 320px; }
 }
+/* itens recolhidos: a seta mostra os órgãos */
+.mapa-linha-topo { grid-template-columns: auto auto minmax(0, 1fr) minmax(190px, 260px) auto; cursor: pointer; }
+.mapa-seta { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.mapa-seta::before { content: ""; width: 8px; height: 8px; border-right: 2px solid #0f2947; border-bottom: 2px solid #0f2947; transform: rotate(-45deg); transition: transform .15s; margin-left: -2px; }
+.mapa-seta[aria-expanded="true"]::before { transform: rotate(45deg); margin: -4px 0 0; }
+.mapa-seta:hover { border-color: var(--brand); }
+.mapa-linha { padding: 12px 16px; }
+.mapa-linha:not(.aberta) .mapa-pills { display: none; }
+.mapa-linha:not(.aberta):hover { border-color: #c9d8ef; }
+.mapa-todos { margin-left: 4px; font-weight: 600; }
+@media (max-width: 900px) {
+  .mapa-linha-topo { grid-template-columns: auto auto minmax(0, 1fr); }
+  .mapa-linha-uso, .mapa-linha-topo .btn-aderentes { grid-column: 3; }
+}

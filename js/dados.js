@@ -8,9 +8,13 @@
     presidente_nome: 'MARCOS AURÉLIO DE PAIVA RÊGO', presidente_cargo: 'Presidente do CIMOP',
     resolucao_srp: 'Resolução CIMOP nº 018/2023', resolucao_alteracao: 'Resolução CIMOP nº 001/2026',
     texto_anexos: 'Conforme solicitado, encaminhamos, em anexo, o processo integral do {pregao}, bem como a Resolução CIMOP nº 018/2023 e a Resolução CIMOP nº 001/2026, que a altera.',
+    documentos: [], email_resposta: '', email_copia: '',
+    email_assunto: 'Ofício nº {oficio} – {sigla} · {assunto}',
+    email_corpo: '{vocativo},\n\nEncaminhamos, em anexo, o Ofício nº {oficio} – {sigla}, em resposta à solicitação de adesão {solicitacao}.\n\n{documentos}\n\nPermanecemos à disposição.\n\nAtenciosamente,\n{presidente}\n{presidente_cargo}\n{orgao}',
   };
 
   function indexar(b) {
+    b.config = b.config || {}; for (const k in CONFIG_PADRAO) if (b.config[k] == null) b.config[k] = CONFIG_PADRAO[k];
     b.atasPorId = {}; b.itensPorId = {}; b.orgaosPorId = {}; b.pedidosPorId = {};
     b.periodos = b.periodos || []; b.importacoes = b.importacoes || []; b.pncp = (b.pncp || []).sort((x, y) => (y.criado_em || '').localeCompare(x.criado_em || ''));
     b.solicitacoes = (b.solicitacoes || []).sort((x, y) => (y.criado_em || '').localeCompare(x.criado_em || ''));
@@ -133,7 +137,16 @@
       },
       async atualizarSolicitacao(id, campos) { const x = base.solicitacoes.find((y) => y.id === id); Object.assign(x, campos, { atualizado_em: new Date().toISOString() }); salvarLocal(); },
       async urlArquivo() { return null; },
+      async emailsDoPedido(id) { return (base.emails || []).filter((x) => x.pedido_id === id).sort((x, y) => y.criado_em.localeCompare(x.criado_em)); },
+      async enviarEmail() { throw new Error('Na prévia o e-mail não é enviado. Na versão publicada ele sai pelo servidor de e-mail do sistema.'); },
       // ---- PNCP (na prévia: exemplos fixos; confirmar aplica só neste navegador)
+      async emailsDoPedido(id) { try { return ok(await sb.from('emails').select('*').eq('pedido_id', id).order('criado_em', { ascending: false })); } catch (e) { return []; } },
+      async enviarEmail(msg) {
+        const { data, error } = await sb.functions.invoke('consorcio-enviar-email', { body: msg });
+        if (data && data.erro) throw new Error(data.erro);
+        if (error) { let m = error.message; try { const j = await error.context.json(); if (j && j.erro) m = j.erro; } catch (e) {} throw new Error(m); }
+        return data;
+      },
       async pncpConfig() { return base.pncpCfg || {}; },
       async buscarPncp() { throw new Error('Na prévia a busca no PNCP não roda. Na versão publicada ela roda sozinha toda madrugada e pelo botão "Buscar agora".'); },
       async ignorarAtualizacao(id) { const a = base.pncp.find((x) => x.id === id); Object.assign(a, { situacao: 'ignorada', decidido_por_nome: 'Kennedy Dantas Francelino', decidido_em: new Date().toISOString() }); salvarLocal(); indexar(base); },
