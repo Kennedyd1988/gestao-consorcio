@@ -734,7 +734,7 @@
   }
   function cartaoEmails(p) {
     const caixa = el('section', { class: 'cartao' }, el('h2', null, 'E-mail ao órgão'), el('p', { class: 'ajuda' }, 'Carregando…'));
-    D.emailsDoPedido(p.id).then((lista) => {
+    Promise.resolve(D.emailsDoPedido ? D.emailsDoPedido(p.id) : []).catch(() => []).then((lista) => {
       const btn = podeEditar() && p.situacao !== 'cancelado' ? el('button', { type: 'button', class: 'btn ' + (lista.some((x) => x.situacao === 'enviado') ? 'btn-claro' : 'btn-primario'), onclick: () => revisarEmail(p, () => rotear()) },
         lista.some((x) => x.situacao === 'enviado') ? 'Enviar de novo' : 'Revisar e enviar e-mail') : null;
       rc(caixa, el('h2', null, 'E-mail ao órgão'),

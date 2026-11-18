@@ -1,7 +1,8 @@
 {
-  "versao": "0.6.1",
+  "versao": "0.6.2",
   "data": "2026-11-17",
   "notas": [
+    "Corrigido: a tela do pedido dava \"Algo deu errado\" na versão publicada (o histórico de e-mails do pedido não carregava).",
     "Relatório resumido em PDF: relação de todas as adesões autorizadas, com data da autorização, ofício, órgão, município, ata, pregão, contratado e valor total, mais o total geral e um resumo por ata.",
     "CNPJ pela Receita Federal: no formulário do município e no cadastro de órgãos, ao digitar o CNPJ, o nome, o município, a UF, a esfera, o e-mail e o telefone são preenchidos sozinhos com os dados públicos da Receita (só os campos vazios). O sistema também avisa se o CNPJ não está ativo ou se o órgão é federal.",
     "Relatório em PDF (menu Adesões): situação completa das adesões, com resumo, situação de cada ata (vigência, ciclo, órgãos, valor e item mais consumido), itens e saldos por ata com os órgãos aderentes, órgãos aderentes consolidados, pedidos negados, pontos de atenção, fundamentação legal e assinatura do Presidente, com o timbre do CIMOP.",

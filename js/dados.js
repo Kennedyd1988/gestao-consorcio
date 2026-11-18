@@ -140,13 +140,6 @@
       async emailsDoPedido(id) { return (base.emails || []).filter((x) => x.pedido_id === id).sort((x, y) => y.criado_em.localeCompare(x.criado_em)); },
       async enviarEmail() { throw new Error('Na prévia o e-mail não é enviado. Na versão publicada ele sai pelo servidor de e-mail do sistema.'); },
       // ---- PNCP (na prévia: exemplos fixos; confirmar aplica só neste navegador)
-      async emailsDoPedido(id) { try { return ok(await sb.from('emails').select('*').eq('pedido_id', id).order('criado_em', { ascending: false })); } catch (e) { return []; } },
-      async enviarEmail(msg) {
-        const { data, error } = await sb.functions.invoke('consorcio-enviar-email', { body: msg });
-        if (data && data.erro) throw new Error(data.erro);
-        if (error) { let m = error.message; try { const j = await error.context.json(); if (j && j.erro) m = j.erro; } catch (e) {} throw new Error(m); }
-        return data;
-      },
       async pncpConfig() { return base.pncpCfg || {}; },
       async buscarPncp() { throw new Error('Na prévia a busca no PNCP não roda. Na versão publicada ela roda sozinha toda madrugada e pelo botão "Buscar agora".'); },
       async ignorarAtualizacao(id) { const a = base.pncp.find((x) => x.id === id); Object.assign(a, { situacao: 'ignorada', decidido_por_nome: 'Kennedy Dantas Francelino', decidido_em: new Date().toISOString() }); salvarLocal(); indexar(base); },
@@ -361,6 +354,13 @@
       async consultarSolicitacao(protocolo, cnpj) { return ok(await sb.rpc('consultar_solicitacao', { p_protocolo: protocolo, p_cnpj: cnpj })); },
       async atualizarSolicitacao(id, campos) { ok(await sb.from('solicitacoes').update({ ...campos, atualizado_em: new Date().toISOString() }).eq('id', id)); },
       async urlArquivo(caminho) { const { data } = await sb.storage.from('consorcio-solicitacoes').createSignedUrl(caminho, 600); return data && data.signedUrl; },
+      async emailsDoPedido(id) { try { return ok(await sb.from('emails').select('*').eq('pedido_id', id).order('criado_em', { ascending: false })); } catch (e) { return []; } },
+      async enviarEmail(msg) {
+        const { data, error } = await sb.functions.invoke('consorcio-enviar-email', { body: msg });
+        if (data && data.erro) throw new Error(data.erro);
+        if (error) { let m = error.message; try { const j = await error.context.json(); if (j && j.erro) m = j.erro; } catch (e) {} throw new Error(m); }
+        return data;
+      },
       async pncpConfig() { return ok(await sb.from('pncp_config').select('cnpj, desde, ultima_execucao, ultimo_resultado').eq('id', 1).maybeSingle()) || {}; },
       async buscarPncp() {
         const { data, error } = await sb.functions.invoke('consorcio-pncp', { body: { origem: 'manual' } });
