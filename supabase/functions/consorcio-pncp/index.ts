@@ -173,7 +173,7 @@ Deno.serve(async (req) => {
           if (a.cancelado) continue;
           if (a.vigenciaFim && a.vigenciaFim.slice(0, 10) < iso(hoje)) continue;   // ata vencida: não interessa
           const det = await talvez(`${base}/atas/${pt.ata}`);
-          if (det && det.possibilidadeAdesao === false) continue;
+          if (!det || det.possibilidadeAdesao !== true) continue;   // só atas que permitem adesão (dispensas etc. ficam de fora)
           const compra = await talvez(`${API}/consulta/v1/orgaos/${pt.cnpj}/compras/${pt.ano}/${pt.seq}`);   // o detalhe da compra mudou para a API de consulta
           const lista = (await talvez(`${base}/itens?pagina=1&tamanhoPagina=500`)) || [];
           const grupos: Record<string, any> = {};
