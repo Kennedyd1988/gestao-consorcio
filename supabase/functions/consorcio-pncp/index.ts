@@ -133,7 +133,7 @@ Deno.serve(async (req) => {
       origem = 'manual: ' + u.nome;
     }
     const cnpj = cfg.cnpj;
-    const res = { atas_pncp: 0, novas: 0, prorrogacoes: 0, reequilibrios: 0, cancelamentos: 0, documentos_lidos: 0, erros: [] as string[] };
+    const res = { atas_pncp: 0, novas: 0, prorrogacoes: 0, reequilibrios: 0, cancelamentos: 0, documentos_lidos: 0, orgaos_pncp: 0, erros: [] as string[] };
 
     // ---- 1. atas do órgão no PNCP (janelas de até 365 dias)
     const vistas = new Map<string, any>();
@@ -206,6 +206,31 @@ Deno.serve(async (req) => {
           await propor({ chave: 'cancel:' + controle, tipo: 'cancelamento', ata_id: ata.id, ata_numero: ata.numero, numero_controle: controle,
             resumo: `ARP ${ata.numero} consta como cancelada no PNCP.`, dados: { data: a.dataCancelamento } });
           res.cancelamentos++;
+        }
+
+        // ---- 3b. órgãos/entidades da ata no PNCP (gerenciadora, participantes e não participantes)
+        {
+          const partes: any[] = []; let lidoOk = false;
+          for (let pag = 1; pag <= 20; pag++) {
+            const j = await talvez(`${base}/atas/${pt.ata}/partesenvolvidas?pagina=${pag}&tamanhoPagina=50`);
+            if (!j) break;
+            lidoOk = true;
+            const lista = j.data || [];
+            partes.push(...lista);
+            if (!lista.length || partes.length >= Number(j.totalRegistros || 0)) break;
+          }
+          if (lidoOk) {
+            const linhas = new Map<string, any>();
+            for (const x of partes) {
+              const cnpj = String(x.orgao?.cnpj || '').replace(/\D/g, ''); const tipo = x.tipoParteEnvolvida?.nome || 'Outro';
+              if (!cnpj) continue;
+              linhas.set(cnpj + '|' + tipo, { ata_id: ata.id, cnpj, tipo, nome: x.orgao?.nome || null, unidade: x.unidade?.nomeUnidade || null,
+                municipio: x.unidade?.localidade?.nomeMunicipio || null, uf: x.unidade?.localidade?.uf || null, incluido_em: x.dataInclusao || null, lido_em: new Date().toISOString() });
+            }
+            await sb.from('pncp_partes').delete().eq('ata_id', ata.id);
+            if (linhas.size) { const { error } = await sb.from('pncp_partes').insert([...linhas.values()]); if (error) res.erros.push('Órgãos da ARP ' + ata.numero + ': ' + error.message); }
+            res.orgaos_pncp += [...linhas.values()].filter((l) => l.tipo === 'Não Participante').length;
+          }
         }
 
         // ---- 4. termos aditivos (prorrogação e reequilíbrio)

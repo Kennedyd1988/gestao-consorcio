@@ -260,3 +260,16 @@ a.mapa-pill.uso-excedido .mapa-pill-uso small { color: #8f2626; font-weight: 700
 .linha-doc input { margin: 0; }
 @media (max-width: 760px) { .linha-doc { grid-template-columns: 1fr; } }
 .lista-relatorio { margin: 0 0 6px; padding-left: 18px; line-height: 1.7; }
+/* conferência órgãos PNCP × sistema */
+.lista-conf { display: flex; flex-direction: column; gap: 8px; }
+.conf-ata { border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.conf-ata > summary { cursor: pointer; padding: 11px 14px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; list-style: none; }
+.conf-ata > summary::-webkit-details-marker { display: none; }
+.conf-ata > summary::before { content: ""; width: 7px; height: 7px; border-right: 2px solid #0f2947; border-bottom: 2px solid #0f2947; transform: rotate(-45deg); transition: transform .15s; margin-right: 4px; }
+.conf-ata[open] > summary::before { transform: rotate(45deg); }
+.conf-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.conf-corpo { padding: 0 16px 12px 30px; }
+.conf-corpo h3 { font-size: 13.5px; margin: 10px 0 4px; }
+.conf-corpo ul { margin: 0; padding-left: 18px; line-height: 1.7; font-size: 13.5px; }
+.conf-corpo li.conf-falta::marker { color: var(--red); }
+.conf-corpo li.conf-sobra::marker { color: var(--amber); }

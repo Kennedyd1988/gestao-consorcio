@@ -406,6 +406,8 @@
         ? `${o.orgao.nome} tem ${R.num(o.valor, 2)} autorizados no item ${o.item.numero} da ARP ${a.numero} — acima do limite de 50% (${R.num(o.limite, 2)}). Se o órgão era participante da ata, registre como participante; se era adesão, avalie retificar.`
         : `Item ${o.item.numero} da ARP ${a.numero}: total aderido ${R.num(o.valor, 2)} acima do dobro (${R.num(o.limite, 2)}).`, a]);
     }
+    if (b.pncpPartes && b.pncpPartes.length) for (const x of conferenciaPncp()) if (x.lido && x.faltam.length)
+      alertas.push(['falta', 'ARP ' + x.ata.numero + ': ' + x.faltam.length + ' adesão(ões) autorizada(s) ainda não aparece(m) no PNCP como não participante (' + x.faltam.map((g) => nomeCurto(g.orgao.nome)).join(', ') + '). Veja em Atualizações do PNCP.', x.ata]);
     const ultimos = [...b.pedidos].filter((p) => p.origem !== 'migracao').sort((x, y) => (y.criado_em || '').localeCompare(x.criado_em || '')).slice(0, 8);
     const nome = (estado.usuario.nome || '').split(' ')[0];
     rc(c,
@@ -1274,6 +1276,81 @@
   const dataHora = (v) => v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
   const dBR = (v) => v ? v.split('-').reverse().join('/') : '—';
 
+
+  // ---------------------------------------------------------------- órgãos do PNCP × adesões autorizadas
+  function chaveOrgao(nome, uf) {
+    let n = normalizar(nome).replace(/\/[a-z]{2}$/, '').replace(/^(municipio|prefeitura municipal|prefeitura) de /, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+    return n + '|' + String(uf || '').toLowerCase();
+  }
+  function conferenciaPncp() {
+    const b = estado.base;
+    return b.atas.filter((a) => a.numero_controle_pncp).map((a) => {
+      const partes = (b.pncpPartes || []).filter((p) => p.ata_id === a.id);
+      const np = partes.filter((p) => p.tipo === 'Não Participante');
+      const chavePncp = (p) => chaveOrgao(/^munic/i.test(p.nome || '') && p.municipio ? p.municipio : p.nome, p.uf);
+      // órgãos com adesão autorizada nesta ata (todos os ciclos, sem os cancelados)
+      const sis = new Map();
+      for (const pi of b.pedido_itens) {
+        if (pi.decisao !== 'autorizado') continue;
+        const it = b.itensPorId[pi.item_id]; if (!it || it.ata_id !== a.id) continue;
+        const p = b.pedidosPorId[pi.pedido_id]; if (!p || p.situacao === 'cancelado') continue;
+        const o = b.orgaosPorId[p.orgao_id]; if (!o) continue;
+        const g = sis.get(o.id) || { orgao: o, oficios: new Set() }; g.oficios.add(p.numero_oficio || 's/n'); sis.set(o.id, g);
+      }
+      const usados = new Set(), faltam = [], ok = [], semCnpj = [];
+      for (const g of sis.values()) {
+        const o = g.orgao;
+        let m = o.cnpj ? np.find((p) => p.cnpj === o.cnpj) : null;
+        if (!m) m = np.find((p) => !usados.has(p.cnpj) && chavePncp(p) === chaveOrgao(o.nome, o.uf));
+        if (m) { usados.add(m.cnpj); ok.push({ ...g, pncp: m }); if (!o.cnpj) semCnpj.push({ orgao: o, cnpj: m.cnpj, pncp: m }); }
+        else faltam.push(g);
+      }
+      const sobra = np.filter((p) => !usados.has(p.cnpj));
+      return { ata: a, lido: partes.length > 0, np, sis: [...sis.values()], ok, faltam, sobra, semCnpj };
+    });
+  }
+  function secaoConferenciaPncp() {
+    const b = estado.base;
+    if (b.partesAtivo === false) return el('section', { class: 'cartao' }, el('h2', null, 'Órgãos no PNCP × adesões autorizadas'), el('p', { class: 'msg msg-falta' }, 'Rode o script 06_pncp_orgaos.sql na Supabase para liberar esta conferência.'));
+    const lista = conferenciaPncp();
+    const totFaltam = lista.reduce((s, x) => s + x.faltam.length, 0), totSobra = lista.reduce((s, x) => s + x.sobra.length, 0), totCnpj = lista.reduce((s, x) => s + x.semCnpj.length, 0);
+    const btnCnpj = totCnpj && podeEditar() ? el('button', { type: 'button', class: 'btn btn-claro', onclick: async (ev) => {
+      const bt = ev.currentTarget; ocupado(bt, 'Gravando…'); let n = 0, pulados = 0;
+      const vistos = new Set();
+      for (const x of lista) for (const c of x.semCnpj) {
+        if (vistos.has(c.orgao.id)) continue; vistos.add(c.orgao.id);
+        if (b.orgaos.some((o) => o.cnpj === c.cnpj && o.id !== c.orgao.id)) { pulados++; continue; }
+        try { await D.salvar('orgaos', { id: c.orgao.id, cnpj: c.cnpj }); n++; } catch (e) { pulados++; }
+      }
+      await recarregar(); rotear(); toast(n + ' CNPJ(s) gravado(s)' + (pulados ? '; ' + pulados + ' não gravado(s) porque o CNPJ já está em outro órgão.' : '.'));
+    } }, 'Gravar os ' + totCnpj + ' CNPJ(s) que faltam no cadastro') : null;
+    const lin = (t, cor) => el('li', { class: cor || null }, t);
+    return el('section', { class: 'cartao' }, el('h2', null, 'Órgãos no PNCP × adesões autorizadas'),
+      el('p', { class: 'ajuda' }, 'Compara os órgãos não participantes que aparecem na aba "Órgãos/Entidades" de cada ata no PNCP com os órgãos que têm adesão autorizada aqui. A lista do PNCP é lida na busca da madrugada.'),
+      el('div', { class: 'resumo-pntp' },
+        el('div', null, el('span', { class: 'rotulo' }, 'Falta incluir no PNCP'), el('strong', { class: 'num-grande' }, totFaltam), el('small', null, 'adesões autorizadas que o PNCP não mostra')),
+        el('div', null, el('span', { class: 'rotulo' }, 'Só no PNCP'), el('strong', { class: 'num-grande' }, totSobra), el('small', null, 'órgãos sem adesão lançada aqui')),
+        el('div', null, el('span', { class: 'rotulo' }, 'CNPJ a completar'), el('strong', { class: 'num-grande' }, totCnpj), el('small', null, 'achados pelo nome no PNCP'))),
+      btnCnpj ? el('div', { class: 'mt-05' }, btnCnpj) : null,
+      el('div', { class: 'lista-conf mt-1' }, lista.map((x) => {
+        const okTudo = x.lido && !x.faltam.length && !x.sobra.length;
+        return el('details', { class: 'conf-ata' + (okTudo ? ' ok' : ''), open: !okTudo && x.lido && (x.faltam.length || x.sobra.length) ? true : null },
+          el('summary', null, el('strong', null, 'ARP ' + x.ata.numero), ' · ' + (x.ata.detentora || ''),
+            el('span', { class: 'conf-chips' },
+              !x.lido ? el('span', { class: 'etiqueta etiqueta-pendente' }, 'ainda não lida') :
+              okTudo ? el('span', { class: 'etiqueta etiqueta-ativo' }, 'confere: ' + x.ok.length + ' órgão(s)') :
+              [x.faltam.length ? el('span', { class: 'etiqueta etiqueta-negado' }, x.faltam.length + ' falta(m) no PNCP') : null,
+                x.sobra.length ? el('span', { class: 'etiqueta etiqueta-pendente' }, x.sobra.length + ' só no PNCP') : null,
+                el('span', { class: 'etiqueta etiqueta-azul' }, x.ok.length + ' confere(m)')])),
+          !x.lido ? el('p', { class: 'ajuda' }, 'A lista de órgãos desta ata ainda não foi lida no PNCP. Ela vem na próxima busca (ou clique em "Buscar agora").') : el('div', { class: 'conf-corpo' },
+            x.faltam.length ? el('div', null, el('h3', null, 'Adesões autorizadas que não aparecem no PNCP'),
+              el('ul', null, x.faltam.map((g) => lin([el('strong', null, g.orgao.nome), g.orgao.cnpj ? ' · ' + O.formatarCnpj(g.orgao.cnpj) : ' · CNPJ não cadastrado', ' · ofício(s) ' + [...g.oficios].join(', ')], 'conf-falta')))) : null,
+            x.sobra.length ? el('div', null, el('h3', null, 'No PNCP, mas sem adesão lançada no sistema'),
+              el('ul', null, x.sobra.map((p) => lin([el('strong', null, tituloPt(p.nome)), ' · ' + O.formatarCnpj(p.cnpj), ' · ' + [p.municipio, p.uf].filter(Boolean).join('/'), p.incluido_em ? ' · incluído no PNCP em ' + R.dataBR(p.incluido_em.slice(0, 10)) : ''], 'conf-sobra')))) : null,
+            x.ok.length ? el('div', null, el('h3', null, 'Conferem (' + x.ok.length + ')'), el('p', { class: 'ajuda' }, x.ok.map((g) => nomeCurto(g.orgao.nome)).join(' · '))) : null));
+      })));
+  }
+
   TELAS.pncp = (c) => {
     const b = estado.base;
     if (b.pncpAtivo === false) { rc(c, cabecalho('Atualizações do PNCP'), el('p', { class: 'msg msg-falta' }, 'A busca no PNCP ainda não foi instalada no banco (script 04_pncp.sql).')); return; }
@@ -1288,6 +1365,7 @@
     rc(c, topo,
       el('p', { class: 'msg msg-info' }, 'Toda madrugada o sistema consulta as atas do CIMOP no PNCP, lê os termos aditivos novos e mostra aqui o que mudou: ata nova, prorrogação (com ou sem renovação dos quantitativos), novo preço por reequilíbrio e cancelamento. Nada muda nos saldos até você conferir e clicar em Confirmar.'),
       pend.length ? pend.map(cartaoPncp) : el('p', { class: 'vazio' }, 'Nenhuma atualização aguardando conferência.'),
+      secaoConferenciaPncp(),
       feitas.length ? el('section', { class: 'cartao' }, el('h2', null, 'Histórico'),
         tabela(['Encontrada em', 'Tipo', 'ARP', 'O que mudou', 'Situação', 'Decidido por'], feitas.map((x) => el('tr', null,
           el('td', { class: 'num' }, dataHora(x.criado_em)), el('td', null, etq(TIPO_PNCP, x.tipo)), el('td', null, x.ata_id ? el('a', { href: '#ata-' + x.ata_id }, x.ata_numero) : x.ata_numero),
@@ -1303,7 +1381,7 @@
   function resumoBusca(r) {
     if (!r) return 'Busca concluída.';
     const n = (r.novas || 0) + (r.prorrogacoes || 0) + (r.reequilibrios || 0) + (r.cancelamentos || 0);
-    return 'Busca concluída: ' + (r.atas_pncp || 0) + ' ata(s) no PNCP, ' + (r.documentos_lidos || 0) + ' documento(s) lido(s), ' + (n ? n + ' atualização(ões) nova(s).' : 'nada novo.');
+    return 'Busca concluída: ' + (r.atas_pncp || 0) + ' ata(s) no PNCP, ' + (r.documentos_lidos || 0) + ' documento(s) lido(s), ' + (r.orgaos_pncp != null ? r.orgaos_pncp + ' órgão(s) não participante(s) lido(s), ' : '') + (n ? n + ' atualização(ões) nova(s).' : 'nada novo.');
   }
 
   function cartaoPncp(x) {

@@ -1,7 +1,8 @@
 {
-  "versao": "0.6.2",
+  "versao": "0.7.0",
   "data": "2026-11-17",
   "notas": [
+    "Órgãos no PNCP × adesões autorizadas (em Atualizações do PNCP): a busca da madrugada lê a aba \"Órgãos/Entidades\" de cada ata no PNCP e o sistema mostra, por ata, as adesões autorizadas que ainda não aparecem lá como não participante (para incluir no PNCP), os órgãos que estão no PNCP sem adesão lançada aqui, e os CNPJs que faltam no cadastro, com botão para gravá-los. Pendências também aparecem nos pontos de atenção do Início. Rode o script 06 na Supabase.",
     "Corrigido: a tela do pedido dava \"Algo deu errado\" na versão publicada (o histórico de e-mails do pedido não carregava).",
     "Relatório resumido em PDF: relação de todas as adesões autorizadas, com data da autorização, ofício, órgão, município, ata, pregão, contratado e valor total, mais o total geral e um resumo por ata.",
     "CNPJ pela Receita Federal: no formulário do município e no cadastro de órgãos, ao digitar o CNPJ, o nome, o município, a UF, a esfera, o e-mail e o telefone são preenchidos sozinhos com os dados públicos da Receita (só os campos vazios). O sistema também avisa se o CNPJ não está ativo ou se o órgão é federal.",

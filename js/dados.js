@@ -16,7 +16,7 @@
   function indexar(b) {
     b.config = b.config || {}; for (const k in CONFIG_PADRAO) if (b.config[k] == null) b.config[k] = CONFIG_PADRAO[k];
     b.atasPorId = {}; b.itensPorId = {}; b.orgaosPorId = {}; b.pedidosPorId = {};
-    b.periodos = b.periodos || []; b.importacoes = b.importacoes || []; b.pncp = (b.pncp || []).sort((x, y) => (y.criado_em || '').localeCompare(x.criado_em || ''));
+    b.periodos = b.periodos || []; b.importacoes = b.importacoes || []; b.pncpPartes = b.pncpPartes || []; b.pncp = (b.pncp || []).sort((x, y) => (y.criado_em || '').localeCompare(x.criado_em || ''));
     b.solicitacoes = (b.solicitacoes || []).sort((x, y) => (y.criado_em || '').localeCompare(x.criado_em || ''));
     b.atas.forEach((a) => { b.atasPorId[a.id] = a; a._qtdItens = 0; });
     b.itens.forEach((i) => { b.itensPorId[i.id] = i; if (b.atasPorId[i.ata_id]) b.atasPorId[i.ata_id]._qtdItens++; });
@@ -26,6 +26,17 @@
     b.atas.sort((x, y) => y.numero.slice(-4).localeCompare(x.numero.slice(-4)) || y.numero.localeCompare(x.numero));
     b.orgaos.sort((x, y) => x.nome.localeCompare(y.nome, 'pt-BR'));
     return b;
+  }
+
+  // Prévia: órgãos que o PNCP mostrava na ARP 007/2025 em 18/11/2026 (aba Órgãos/Entidades)
+  function sementePartes(b) {
+    const a = b.atas.find((x) => x.numero === '007/2025'); if (!a) return [];
+    a.numero_controle_pncp = a.numero_controle_pncp || '15185079000140-1-000025/2025-000001';
+    return [['29138286000158', 'MUNICIPIO DE NILOPOLIS', 'Nilópolis', 'RJ'], ['08234148000100', 'MUNICIPIO DE MACAIBA', 'Macaíba', 'RN'], ['08311904000140', 'MUNICIPIO DE POCO BRANCO', 'Poço Branco', 'RN'],
+      ['08079402000135', 'MUNICIPIO DE SAO GONCALO DO AMARANTE', 'São Gonçalo do Amarante', 'RN'], ['13927819000140', 'MUNICIPIO DE LAURO DE FREITAS', 'Lauro de Freitas', 'BA'],
+      ['09159666000161', 'MUNICIPIO DE SANTA RITA', 'Santa Rita', 'PB'], ['08184111000107', 'MUNICIPIO DE ALTO DO RODRIGUES', 'Alto do Rodrigues', 'RN']]
+      .map(([cnpj, nome, municipio, uf]) => ({ ata_id: a.id, cnpj, tipo: 'Não Participante', nome, municipio, uf, incluido_em: '2026-08-20T14:38:08' }))
+      .concat([{ ata_id: a.id, cnpj: '15185079000140', tipo: 'Gerenciadora', nome: 'CONSORCIO INTERMUNICIPAL MULTIFINALITARIO DOS MUNICIPIOS DO OESTE POTIGUAR', municipio: 'Portalegre', uf: 'RN' }]);
   }
 
   // Exemplos da prévia para a tela "Atualizações do PNCP"
@@ -51,11 +62,11 @@
     const CHAVE = 'gestao-consorcio-demo-v2';
     let base;
     const salvarLocal = () => { try { localStorage.setItem(CHAVE, JSON.stringify(limpo())); } catch (e) {} };
-    const limpo = () => ({ config: base.config, atas: base.atas, itens: base.itens, orgaos: base.orgaos, pedidos: base.pedidos, pedido_itens: base.pedido_itens, solicitacoes: base.solicitacoes, periodos: base.periodos, importacoes: base.importacoes, pncp: base.pncp, pncpCfg: base.pncpCfg });
+    const limpo = () => ({ config: base.config, atas: base.atas, itens: base.itens, orgaos: base.orgaos, pedidos: base.pedidos, pedido_itens: base.pedido_itens, solicitacoes: base.solicitacoes, periodos: base.periodos, importacoes: base.importacoes, pncp: base.pncp, pncpCfg: base.pncpCfg, pncpPartes: base.pncpPartes });
     function semente() {
       const b = { config: { ...CONFIG_PADRAO }, atas: [], itens: [], orgaos: [], pedidos: [], pedido_itens: [], solicitacoes: [], periodos: [], importacoes: [], pncp: [] };
       if (window.DEMO_SEMENTE) importarLocal(b, window.DEMO_SEMENTE);
-      b.pncp = sementePncp(b); b.pncpCfg = { ultima_execucao: '2026-11-17T07:00:00-03:00', ultimo_resultado: { atas_pncp: 11, novas: 1, prorrogacoes: 1, reequilibrios: 1, cancelamentos: 0, documentos_lidos: 3, erros: [], origem: 'agenda' } };
+      b.pncp = sementePncp(b); b.pncpPartes = sementePartes(b); b.pncpCfg = { ultima_execucao: '2026-11-17T07:00:00-03:00', ultimo_resultado: { atas_pncp: 11, novas: 1, prorrogacoes: 1, reequilibrios: 1, cancelamentos: 0, documentos_lidos: 3, erros: [], origem: 'agenda' } };
       // Uma solicitação de exemplo, como se tivesse chegado pelo formulário online
       const it = (arp, n) => { const a = b.atas.find((x) => x.numero === arp); const i = a && b.itens.find((x) => x.ata_id === a.id && x.numero === n); return i && i.id; };
       const i1 = it('001/2026', 1), i3 = it('003/2026', 3);
@@ -73,6 +84,7 @@
         base = s || semente();
         base.solicitacoes = base.solicitacoes || [];
         if (!base.pncp) { base.pncp = sementePncp(base); base.pncpCfg = { ultima_execucao: null, ultimo_resultado: null }; }
+        if (!base.pncpPartes) base.pncpPartes = sementePartes(base);
       }
       return indexar(base);
     }
@@ -279,12 +291,13 @@
       async esqueci(email) { ok(await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })); },
       async trocarSenha(nova) { ok(await sb.auth.updateUser({ password: nova })); const { data } = await sb.auth.getUser(); await sb.from('usuarios').update({ troca_senha: false }).eq('id', data.user.id); },
       async carregar() {
-        const [config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes, periodos, pncp] = await Promise.all([
+        const [config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes, periodos, pncp, partes] = await Promise.all([
           sb.from('configuracoes').select('*').eq('id', 1).single().then(ok), tudo('atas'), tudo('itens'), tudo('orgaos'), tudo('pedidos'), tudo('pedido_itens'),
           tudo('solicitacoes', 'criado_em').catch(() => []),   // sem o script 02: lista vazia
           tudo('periodos').catch(() => []),                      // sem o script 03: sem períodos
-          tudo('pncp_atualizacoes', 'criado_em').catch(() => null)]); // sem o script 04: null
-        return indexar({ config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes, periodos, pncp: pncp || [], pncpAtivo: pncp !== null });
+          tudo('pncp_atualizacoes', 'criado_em').catch(() => null),  // sem o script 04: null
+          tudo('pncp_partes', 'ata_id').catch(() => null)]);         // sem o script 06: null
+        return indexar({ config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes, periodos, pncp: pncp || [], pncpAtivo: pncp !== null, pncpPartes: partes || [], partesAtivo: partes !== null });
       },
       async salvar(tabela, reg) {
         const { id, ...resto } = Object.fromEntries(Object.entries(reg).filter(([k]) => !k.startsWith('_')));
