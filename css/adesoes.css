@@ -190,3 +190,13 @@ a.mapa-chip:hover { border-color: var(--brand); color: var(--brand); }
 .faixa-ciclo select { height: 36px; border: 1px solid #c9d8ef; border-radius: 8px; padding: 0 10px; background: #fff; color: var(--text); font: inherit; font-size: 14px; }
 .marca-icone { border-radius: 22%; background: #fff; padding: 0 !important; box-shadow: 0 2px 8px rgba(6, 22, 41, .18); }
 .lado-marca .marca-icone { border-radius: 18px; }
+
+/* ---- Atualizações do PNCP (0.5.0) */
+.cartao-pncp { border-left: 4px solid var(--acento, #0a9668); }
+.cartao-pncp .pncp-topo { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.cartao-pncp .pncp-topo h2 { margin: 0; flex: 1; min-width: 260px; font-size: 1.05rem; }
+.cartao-pncp .pncp-topo h2::before { display: none; }
+.cartao-pncp .botoes-form { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.cartao-pncp .trecho { background: #f5f8fb; border: 1px solid var(--line, #d7e4f0); border-radius: 10px; padding: 10px 12px; font-size: .9rem; white-space: pre-wrap; }
+.cartao-pncp details summary { cursor: pointer; color: var(--brand, #0d4fc4); font-weight: 600; }
+.cartao-pncp input.qtd { max-width: 140px; }

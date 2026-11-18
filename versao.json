@@ -1,7 +1,8 @@
 {
-  "versao": "0.4.0",
+  "versao": "0.5.0",
   "data": "2026-11-17",
   "notas": [
+    "Atualizações do PNCP: toda madrugada (e pelo botão \"Buscar agora\") o sistema consulta as atas do CIMOP no PNCP, lê os termos aditivos publicados e mostra o que mudou: ata nova (com itens e preços do resultado), prorrogação com ou sem renovação dos quantitativos, novo preço por reequilíbrio e cancelamento. Cada atualização é conferida e só entra no sistema depois de \"Confirmar\". Rode o script 04 na Supabase e publique a função consorcio-pncp.",
     "Atas prorrogadas: cada ata tem a aba \"Vigências e prorrogações\". Quando o termo aditivo renova os quantitativos, começa um novo ciclo e os limites de 50% e do dobro contam só as adesões do novo período (o saldo anterior não se soma); dá para consultar o ciclo anterior. Pedido com data fora da vigência é negado. Rode o script 03 na Supabase.",
     "Importação: a mesma planilha (mesmos dados) não pode ser importada duas vezes; adesões já lançadas, com ou sem nº de ofício, são ignoradas; linhas repetidas na planilha são apontadas. Nova aba \"Vigências\" e coluna \"Período\" nas adesões.",
     "Novo ícone e nome: SOFT+ Consórcios.",

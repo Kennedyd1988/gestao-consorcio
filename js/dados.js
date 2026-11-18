@@ -12,7 +12,7 @@
 
   function indexar(b) {
     b.atasPorId = {}; b.itensPorId = {}; b.orgaosPorId = {}; b.pedidosPorId = {};
-    b.periodos = b.periodos || []; b.importacoes = b.importacoes || [];
+    b.periodos = b.periodos || []; b.importacoes = b.importacoes || []; b.pncp = (b.pncp || []).sort((x, y) => (y.criado_em || '').localeCompare(x.criado_em || ''));
     b.solicitacoes = (b.solicitacoes || []).sort((x, y) => (y.criado_em || '').localeCompare(x.criado_em || ''));
     b.atas.forEach((a) => { b.atasPorId[a.id] = a; a._qtdItens = 0; });
     b.itens.forEach((i) => { b.itensPorId[i.id] = i; if (b.atasPorId[i.ata_id]) b.atasPorId[i.ata_id]._qtdItens++; });
@@ -24,15 +24,34 @@
     return b;
   }
 
+  // Exemplos da prévia para a tela "Atualizações do PNCP"
+  function sementePncp(b) {
+    const ata = (n) => b.atas.find((x) => x.numero === n);
+    const out = []; const a8 = ata('008/2025'), a3 = ata('003/2026');
+    if (a8) out.push({ id: uid(), chave: 'ex1', tipo: 'prorrogacao', ata_id: a8.id, ata_numero: a8.numero, situacao: 'pendente', criado_em: '2026-11-17T07:00:10-03:00',
+      resumo: 'ARP 008/2025 prorrogada até 09/12/2027, com renovação dos quantitativos (EXEMPLO da prévia).', documento_titulo: '1º Termo Aditivo (exemplo)',
+      dados: { inicio: '2026-12-10', fim: '2027-12-09', renova: true, renova_lido: true, instrumento: '1º Termo Aditivo', trecho: 'Fica prorrogada por 12 (doze) meses, passando a vigorar de 10/12/2026 a 09/12/2027. Ficam renovados os quantitativos originalmente registrados…' } });
+    if (a3) { const it = b.itens.find((x) => x.ata_id === a3.id && x.numero === 3);
+      if (it) out.push({ id: uid(), chave: 'ex2', tipo: 'reequilibrio', ata_id: a3.id, ata_numero: a3.numero, situacao: 'pendente', criado_em: '2026-11-17T07:00:12-03:00',
+        resumo: 'ARP 003/2026: novo preço em 1 item(ns) (EXEMPLO da prévia).', documento_titulo: '3º Termo Aditivo (exemplo)',
+        dados: { itens: [{ numero: 3, preco_anterior: Number(it.preco_unitario), preco_novo: Math.round(Number(it.preco_unitario) * 1.0412 * 100) / 100 }], instrumento: '3º Termo Aditivo' } }); }
+    out.push({ id: uid(), chave: 'ex3', tipo: 'nova_ata', ata_numero: '006/2026', situacao: 'pendente', criado_em: '2026-11-17T07:00:14-03:00',
+      resumo: 'ARP 006/2026 publicada no PNCP – EMPRESA EXEMPLO LTDA (2 item(ns)) (EXEMPLO da prévia).',
+      dados: { numero: '006/2026', pregao: '002/2026', processo: '00000/2026', objeto: 'Registro de preços para aquisição de material de exemplo', detentora: 'EMPRESA EXEMPLO LTDA', cnpj_detentora: '11222333000181',
+        data_assinatura: '2026-11-10', inicio: '2026-11-10', fim: '2027-11-10', itens: [{ numero: 1, descricao: 'Item de exemplo A', unidade: 'Unidade', qtd: 500, preco: 12.5 }, { numero: 2, descricao: 'Item de exemplo B', unidade: 'Caixa', qtd: 80, preco: 230 }] } });
+    return out;
+  }
+
   // ===================== DEMONSTRAÇÃO =====================
   function criarDemo() {
     const CHAVE = 'gestao-consorcio-demo-v2';
     let base;
     const salvarLocal = () => { try { localStorage.setItem(CHAVE, JSON.stringify(limpo())); } catch (e) {} };
-    const limpo = () => ({ config: base.config, atas: base.atas, itens: base.itens, orgaos: base.orgaos, pedidos: base.pedidos, pedido_itens: base.pedido_itens, solicitacoes: base.solicitacoes, periodos: base.periodos, importacoes: base.importacoes });
+    const limpo = () => ({ config: base.config, atas: base.atas, itens: base.itens, orgaos: base.orgaos, pedidos: base.pedidos, pedido_itens: base.pedido_itens, solicitacoes: base.solicitacoes, periodos: base.periodos, importacoes: base.importacoes, pncp: base.pncp, pncpCfg: base.pncpCfg });
     function semente() {
-      const b = { config: { ...CONFIG_PADRAO }, atas: [], itens: [], orgaos: [], pedidos: [], pedido_itens: [], solicitacoes: [], periodos: [], importacoes: [] };
+      const b = { config: { ...CONFIG_PADRAO }, atas: [], itens: [], orgaos: [], pedidos: [], pedido_itens: [], solicitacoes: [], periodos: [], importacoes: [], pncp: [] };
       if (window.DEMO_SEMENTE) importarLocal(b, window.DEMO_SEMENTE);
+      b.pncp = sementePncp(b); b.pncpCfg = { ultima_execucao: '2026-11-17T07:00:00-03:00', ultimo_resultado: { atas_pncp: 11, novas: 1, prorrogacoes: 1, reequilibrios: 1, cancelamentos: 0, documentos_lidos: 3, erros: [], origem: 'agenda' } };
       // Uma solicitação de exemplo, como se tivesse chegado pelo formulário online
       const it = (arp, n) => { const a = b.atas.find((x) => x.numero === arp); const i = a && b.itens.find((x) => x.ata_id === a.id && x.numero === n); return i && i.id; };
       const i1 = it('001/2026', 1), i3 = it('003/2026', 3);
@@ -49,6 +68,7 @@
         try { s = JSON.parse(localStorage.getItem(CHAVE) || 'null'); } catch (e) {}
         base = s || semente();
         base.solicitacoes = base.solicitacoes || [];
+        if (!base.pncp) { base.pncp = sementePncp(base); base.pncpCfg = { ultima_execucao: null, ultimo_resultado: null }; }
       }
       return indexar(base);
     }
@@ -113,6 +133,31 @@
       },
       async atualizarSolicitacao(id, campos) { const x = base.solicitacoes.find((y) => y.id === id); Object.assign(x, campos, { atualizado_em: new Date().toISOString() }); salvarLocal(); },
       async urlArquivo() { return null; },
+      // ---- PNCP (na prévia: exemplos fixos; confirmar aplica só neste navegador)
+      async pncpConfig() { return base.pncpCfg || {}; },
+      async buscarPncp() { throw new Error('Na prévia a busca no PNCP não roda. Na versão publicada ela roda sozinha toda madrugada e pelo botão "Buscar agora".'); },
+      async ignorarAtualizacao(id) { const a = base.pncp.find((x) => x.id === id); Object.assign(a, { situacao: 'ignorada', decidido_por_nome: 'Kennedy Dantas Francelino', decidido_em: new Date().toISOString() }); salvarLocal(); indexar(base); },
+      async confirmarAtualizacao(id, dados) {
+        const a = base.pncp.find((x) => x.id === id); const d = dados || a.dados;
+        if (a.situacao !== 'pendente') throw new Error('Esta atualização já foi decidida.');
+        if (a.tipo === 'nova_ata') {
+          if (base.atas.some((x) => x.numero === d.numero)) throw new Error('Já existe a ARP ' + d.numero + ' no sistema.');
+          const ata = { id: uid(), numero: d.numero, pregao: d.pregao, processo: d.processo, objeto: d.objeto, detentora: d.detentora, cnpj_detentora: d.cnpj_detentora,
+            data_assinatura: d.data_assinatura, vigencia_inicio: d.inicio, vigencia_fim: d.fim, clausulas_adesao: d.clausulas_adesao || '4.1 a 4.3', ativo: true, numero_controle_pncp: a.numero_controle };
+          base.atas.push(ata);
+          (d.itens || []).forEach((i) => base.itens.push({ id: uid(), ata_id: ata.id, numero: Number(i.numero), descricao: i.descricao, unidade: i.unidade, qtd_registrada: Number(i.qtd), preco_unitario: i.preco != null ? Number(i.preco) : null }));
+          base.periodos.push({ id: uid(), ata_id: ata.id, numero: 1, inicio: d.inicio, fim: d.fim, renova_quantitativos: false, instrumento: 'Vigência original' });
+        } else if (a.tipo === 'prorrogacao') {
+          const ps = base.periodos.filter((x) => x.ata_id === a.ata_id);
+          if (!ps.length) throw new Error('A ARP ' + a.ata_numero + ' não tem a vigência original cadastrada. Cadastre-a na tela da ata antes de confirmar.');
+          base.periodos.push({ id: uid(), ata_id: a.ata_id, numero: Math.max(...ps.map((x) => x.numero)) + 1, inicio: d.inicio, fim: d.fim, renova_quantitativos: !!d.renova, instrumento: d.instrumento });
+          sincronizarVigencia(base, a.ata_id);
+        } else if (a.tipo === 'reequilibrio') {
+          for (const n of d.itens) { const it = base.itens.find((x) => x.ata_id === a.ata_id && x.numero === Number(n.numero)); if (!it) throw new Error('Item ' + n.numero + ' não existe na ARP ' + a.ata_numero + '.'); it.preco_unitario = Number(n.preco_novo); }
+        } else if (a.tipo === 'cancelamento') { const at = base.atas.find((x) => x.id === a.ata_id); if (at) at.ativo = false; }
+        Object.assign(a, { situacao: 'confirmada', dados: d, decidido_por_nome: 'Kennedy Dantas Francelino', decidido_em: new Date().toISOString() });
+        salvarLocal(); indexar(base);
+      },
       async usuarios() { return [{ id: '1', nome: 'Kennedy Dantas Francelino', email: 'kennedyfrancelino@gmail.com', perfil: 'administrador', ativo: true }]; },
       async criarUsuario() { throw new Error('Na prévia não é possível criar usuários. Isso funciona na versão publicada.'); },
       async salvarUsuario() {},
@@ -228,11 +273,12 @@
       async esqueci(email) { ok(await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })); },
       async trocarSenha(nova) { ok(await sb.auth.updateUser({ password: nova })); const { data } = await sb.auth.getUser(); await sb.from('usuarios').update({ troca_senha: false }).eq('id', data.user.id); },
       async carregar() {
-        const [config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes, periodos] = await Promise.all([
+        const [config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes, periodos, pncp] = await Promise.all([
           sb.from('configuracoes').select('*').eq('id', 1).single().then(ok), tudo('atas'), tudo('itens'), tudo('orgaos'), tudo('pedidos'), tudo('pedido_itens'),
           tudo('solicitacoes', 'criado_em').catch(() => []),   // sem o script 02: lista vazia
-          tudo('periodos').catch(() => [])]);                    // sem o script 03: sem períodos
-        return indexar({ config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes, periodos });
+          tudo('periodos').catch(() => []),                      // sem o script 03: sem períodos
+          tudo('pncp_atualizacoes', 'criado_em').catch(() => null)]); // sem o script 04: null
+        return indexar({ config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes, periodos, pncp: pncp || [], pncpAtivo: pncp !== null });
       },
       async salvar(tabela, reg) {
         const { id, ...resto } = Object.fromEntries(Object.entries(reg).filter(([k]) => !k.startsWith('_')));
@@ -302,6 +348,15 @@
       async consultarSolicitacao(protocolo, cnpj) { return ok(await sb.rpc('consultar_solicitacao', { p_protocolo: protocolo, p_cnpj: cnpj })); },
       async atualizarSolicitacao(id, campos) { ok(await sb.from('solicitacoes').update({ ...campos, atualizado_em: new Date().toISOString() }).eq('id', id)); },
       async urlArquivo(caminho) { const { data } = await sb.storage.from('consorcio-solicitacoes').createSignedUrl(caminho, 600); return data && data.signedUrl; },
+      async pncpConfig() { return ok(await sb.from('pncp_config').select('cnpj, desde, ultima_execucao, ultimo_resultado').eq('id', 1).maybeSingle()) || {}; },
+      async buscarPncp() {
+        const { data, error } = await sb.functions.invoke('consorcio-pncp', { body: { origem: 'manual' } });
+        if (data && data.erro) throw new Error(data.erro);
+        if (error) { let m = error.message; try { const j = await error.context.json(); if (j && j.erro) m = j.erro; } catch (e) {} throw new Error(m); }
+        return data;
+      },
+      async confirmarAtualizacao(id, dados) { ok(await sb.rpc('confirmar_atualizacao', { p_id: id, p_dados: dados || null })); },
+      async ignorarAtualizacao(id) { ok(await sb.rpc('ignorar_atualizacao', { p_id: id })); },
       async usuarios() { return ok(await sb.from('usuarios').select('*').order('nome')); },
       async criarUsuario(u) {
         const { data, error } = await sb.functions.invoke('consorcio-convidar-usuario', { body: u });

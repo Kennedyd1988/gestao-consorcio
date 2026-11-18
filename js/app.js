@@ -263,7 +263,7 @@
   // ---------------------------------------------------------------- menu e rotas
   const MENU = [
     ['Adesões', [['solicitacoes', 'Solicitações recebidas'], ['novo', 'Novo pedido de adesão', () => podeEditar()], ['pedidos', 'Pedidos e ofícios']]],
-    ['Cadastros', [['atas', 'Atas de registro de preços'], ['orgaos', 'Órgãos aderentes']]],
+    ['Cadastros', [['atas', 'Atas de registro de preços'], ['orgaos', 'Órgãos aderentes'], ['pncp', 'Atualizações do PNCP', () => podeEditar()]]],
     ['Sistema', [['importar', 'Importar planilha', () => podeEditar()], ['configuracoes', 'Configurações do ofício', () => eAdmin()], ['usuarios', 'Usuários', () => eAdmin()]]],
   ];
   function montarMenu() {
@@ -281,6 +281,8 @@
     if (c && estado.base) { const n = estado.base.pedidos.filter((p) => p.origem !== 'migracao' && p.situacao !== 'cancelado').length; c.textContent = n; c.hidden = !n; }
     const s = document.querySelector('[data-cont="solicitacoes"]');
     if (s && estado.base) { const n = estado.base.solicitacoes.filter((x) => x.situacao === 'recebida' || x.situacao === 'em_analise').length; s.textContent = n; s.hidden = !n; s.classList.toggle('aba-qtd-alerta', n > 0); }
+    const u = document.querySelector('[data-cont="pncp"]');
+    if (u && estado.base) { const n = (estado.base.pncp || []).filter((x) => x.situacao === 'pendente').length; u.textContent = n; u.hidden = !n; u.classList.toggle('aba-qtd-alerta', n > 0); }
   }
   $('menu-busca').addEventListener('input', () => {
     const t = normalizar($('menu-busca').value.trim()); let algum = false;
@@ -987,6 +989,133 @@
         tabela(['Órgão', 'Ofício', 'Qtd pedida', 'Motivo'], neg.map((l) => el('tr', null, el('td', null, l.o.nome), el('td', null, el('a', { href: '#pedido-' + l.p.id }, l.p.numero_oficio || 's/n')),
           el('td', { class: 'num' }, R.num(l.pi.qtd_solicitada, 2)), el('td', null, l.pi.motivo || ''))))) : null);
   };
+
+
+  // ================================================================= ATUALIZAÇÕES DO PNCP
+  const TIPO_PNCP = { nova_ata: ['Nova ata', 'etiqueta-azul'], prorrogacao: ['Prorrogação', 'etiqueta-vig'], reequilibrio: ['Novo preço', 'etiqueta-pendente'], cancelamento: ['Cancelamento', 'etiqueta-negado'] };
+  const SIT_PNCP = { pendente: ['Aguardando', 'etiqueta-pendente'], confirmada: ['Confirmada', 'etiqueta-ativo'], ignorada: ['Ignorada', 'etiqueta-desativado'] };
+  const etq = (m, k) => el('span', { class: 'etiqueta ' + m[k][1] }, m[k][0]);
+  const dataHora = (v) => v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+  const dBR = (v) => v ? v.split('-').reverse().join('/') : '—';
+
+  TELAS.pncp = (c) => {
+    const b = estado.base;
+    if (b.pncpAtivo === false) { rc(c, cabecalho('Atualizações do PNCP'), el('p', { class: 'msg msg-falta' }, 'A busca no PNCP ainda não foi instalada no banco (script 04_pncp.sql).')); return; }
+    const pend = b.pncp.filter((x) => x.situacao === 'pendente'), feitas = b.pncp.filter((x) => x.situacao !== 'pendente');
+    const ultima = el('p', { class: 'sub' }, pend.length + ' aguardando conferência · última busca: carregando…');
+    const btn = el('button', { type: 'button', class: 'btn btn-primario', onclick: async () => {
+      ocupado(btn, 'Buscando no PNCP…');
+      try { const r = await D.buscarPncp(); await recarregar(); rotear(); toast(resumoBusca(r)); }
+      catch (e) { ocupado(btn); toast('Não foi possível buscar: ' + e.message); }
+    } }, 'Buscar agora');
+    const topo = cabecalho('Atualizações do PNCP', null, btn); topo.querySelector('h1').after(ultima);
+    rc(c, topo,
+      el('p', { class: 'msg msg-info' }, 'Toda madrugada o sistema consulta as atas do CIMOP no PNCP, lê os termos aditivos novos e mostra aqui o que mudou: ata nova, prorrogação (com ou sem renovação dos quantitativos), novo preço por reequilíbrio e cancelamento. Nada muda nos saldos até você conferir e clicar em Confirmar.'),
+      pend.length ? pend.map(cartaoPncp) : el('p', { class: 'vazio' }, 'Nenhuma atualização aguardando conferência.'),
+      feitas.length ? el('section', { class: 'cartao' }, el('h2', null, 'Histórico'),
+        tabela(['Encontrada em', 'Tipo', 'ARP', 'O que mudou', 'Situação', 'Decidido por'], feitas.map((x) => el('tr', null,
+          el('td', { class: 'num' }, dataHora(x.criado_em)), el('td', null, etq(TIPO_PNCP, x.tipo)), el('td', null, x.ata_id ? el('a', { href: '#ata-' + x.ata_id }, x.ata_numero) : x.ata_numero),
+          el('td', null, x.resumo, x.documento_url ? el('a', { class: 'sub-linha link', href: x.documento_url, target: '_blank', rel: 'noopener' }, (x.documento_titulo || 'Documento') + ' ↗') : null),
+          el('td', null, etq(SIT_PNCP, x.situacao)), el('td', null, x.decidido_por_nome || '—', el('span', { class: 'sub-linha' }, dataHora(x.decidido_em))))))) : null);
+    D.pncpConfig().then((cfg) => {
+      const r = cfg && cfg.ultimo_resultado;
+      ultima.textContent = pend.length + ' aguardando conferência · última busca: ' + (cfg && cfg.ultima_execucao ? dataHora(cfg.ultima_execucao) + (r && r.origem ? (r.origem === 'agenda' ? ' (automática)' : ' (' + r.origem.replace('manual: ', 'por ') + ')') : '') : 'ainda não rodou');
+      if (r && r.erro) ultima.after(el('p', { class: 'msg msg-erro' }, 'A última busca falhou: ' + r.erro));
+      else if (r && r.erros && r.erros.length) ultima.after(el('details', { class: 'msg msg-falta' }, el('summary', null, r.erros.length + ' aviso(s) na última busca'), el('ul', null, r.erros.slice(0, 20).map((t) => el('li', null, t)))));
+    }).catch(() => { ultima.textContent = pend.length + ' aguardando conferência'; });
+  };
+  function resumoBusca(r) {
+    if (!r) return 'Busca concluída.';
+    const n = (r.novas || 0) + (r.prorrogacoes || 0) + (r.reequilibrios || 0) + (r.cancelamentos || 0);
+    return 'Busca concluída: ' + (r.atas_pncp || 0) + ' ata(s) no PNCP, ' + (r.documentos_lidos || 0) + ' documento(s) lido(s), ' + (n ? n + ' atualização(ões) nova(s).' : 'nada novo.');
+  }
+
+  function cartaoPncp(x) {
+    const d = JSON.parse(JSON.stringify(x.dados || {}));
+    const b = estado.base, ata = x.ata_id && b.atasPorId[x.ata_id];
+    const corpo = el('div');
+    const add = (...k) => k.flat(9).filter((v) => v != null && v !== false).forEach((v) => corpo.append(v));
+    let coletar = () => null;
+    const uid = (k) => 'pn-' + x.id.slice(0, 8) + '-' + k;
+    if (x.tipo === 'prorrogacao') {
+      const ps = R.periodosDa(b, x.ata_id); const ult = ps[ps.length - 1];
+      const f = { inicio: el('input', { type: 'date', value: d.inicio || '' }), fim: el('input', { type: 'date', value: d.fim || '' }),
+        renova: el('input', { type: 'checkbox', checked: !!d.renova }), instrumento: txt(d.instrumento || '') };
+      const lido = d.renova_lido === true ? 'O documento fala em renovação dos quantitativos.' : d.renova_lido === false ? 'O documento diz que os quantitativos NÃO são renovados.' : 'Não foi possível identificar no documento: confira e marque se houver renovação.';
+      add(
+        el('p', { class: 'ajuda' }, 'Vigência atual no sistema: ' + (ult ? ult.numero + 'º período, ' + dBR(ult.inicio) + ' a ' + dBR(ult.fim) : 'sem períodos cadastrados') + '.'),
+        el('div', { class: 'grade-campos' }, campo(uid('ini'), 'Início do novo período', f.inicio, null, true), campo(uid('fim'), 'Fim do novo período', f.fim, null, true), campo(uid('ins'), 'Instrumento', f.instrumento)),
+        el('label', { class: 'checkbox mt-05' }, f.renova, ' Renova os quantitativos (novo ciclo: os limites de 50% e do dobro recomeçam; o saldo não usado não se soma)'),
+        el('p', { class: 'ajuda' }, lido),
+        d.trecho ? el('details', { class: 'mt-05' }, el('summary', null, 'Ver o trecho lido do termo aditivo'), el('p', { class: 'trecho' }, d.trecho)) : null);
+      coletar = () => {
+        if (!f.inicio.value || !f.fim.value) throw new Error('Informe o início e o fim do novo período.');
+        if (f.fim.value <= f.inicio.value) throw new Error('O fim deve ser depois do início.');
+        if (ult && f.inicio.value <= ult.fim) throw new Error('O novo período deve começar depois de ' + dBR(ult.fim) + '.');
+        return { inicio: f.inicio.value, fim: f.fim.value, renova: f.renova.checked, instrumento: f.instrumento.value.trim() || 'Termo aditivo' };
+      };
+    } else if (x.tipo === 'reequilibrio') {
+      const ins = {};
+      add(tabela(['Item', 'Descrição', 'Preço atual', 'Preço no aditivo', 'Novo preço'], (d.itens || []).map((l) => {
+        const it = b.itens.find((i) => i.ata_id === x.ata_id && i.numero === Number(l.numero));
+        ins[l.numero] = el('input', { type: 'number', step: '0.01', min: '0', class: 'qtd', value: l.preco_novo });
+        return el('tr', null, el('td', { class: 'num' }, l.numero), el('td', null, it ? it.descricao : el('span', { class: 'falta-leve' }, 'item não encontrado na ata')),
+          el('td', { class: 'num' }, it && it.preco_unitario != null ? R.moeda(it.preco_unitario) : '—'), el('td', { class: 'num' }, l.preco_anterior != null ? R.moeda(l.preco_anterior) + ' → ' + R.moeda(l.preco_novo) : R.moeda(l.preco_novo)),
+          el('td', { class: 'num' }, ins[l.numero]));
+      })), el('p', { class: 'ajuda mt-05' }, 'O novo preço vale para os próximos ofícios. Os ofícios já emitidos continuam com o preço da época, e o preço anterior fica guardado no histórico.'));
+      coletar = () => ({ instrumento: d.instrumento, itens: (d.itens || []).map((l) => { const v = Number(ins[l.numero].value); if (!(v > 0)) throw new Error('Informe o novo preço do item ' + l.numero + '.'); return { numero: Number(l.numero), preco_novo: v }; }) });
+    } else if (x.tipo === 'nova_ata') {
+      const f = { numero: txt(d.numero), pregao: txt(d.pregao || ''), processo: txt(d.processo || ''), detentora: txt(d.detentora || ''), cnpj: txt(O.formatarCnpj ? O.formatarCnpj(d.cnpj_detentora || '') : d.cnpj_detentora || ''),
+        objeto: area(d.objeto || ''), clausulas: txt(d.clausulas_adesao || '4.1 a 4.3'), assinatura: el('input', { type: 'date', value: d.data_assinatura || '' }),
+        inicio: el('input', { type: 'date', value: d.inicio || '' }), fim: el('input', { type: 'date', value: d.fim || '' }) };
+      let itens = d.itens || [];
+      const caixaItens = el('div');
+      const desenharItens = () => rc(caixaItens, itens.length ? tabela(['Item', 'Descrição', 'Unidade', 'Quantidade', 'Preço unitário'], itens.map((i) => el('tr', null,
+        el('td', { class: 'num' }, i.numero), el('td', null, i.descricao), el('td', null, i.unidade || ''), el('td', { class: 'num' }, R.num(i.qtd, 2)), el('td', { class: 'num' }, i.preco != null ? R.moeda(i.preco) : '—'))))
+        : el('p', { class: 'msg msg-falta' }, 'O PNCP ainda não tem o resultado dos itens desta ata. Você pode confirmar e cadastrar os itens depois na tela da ata, ou ignorar e aguardar a próxima busca.'));
+      desenharItens();
+      let escolha = null;
+      if (d.grupos && d.grupos.length > 1) {
+        escolha = sel(d.grupos.map((g, i) => [i, g.nome + ' (' + g.itens.length + ' itens)']), Math.max(0, d.grupos.findIndex((g) => g.cnpj === d.cnpj_detentora)));
+        escolha.addEventListener('change', () => { const g = d.grupos[Number(escolha.value)]; f.detentora.value = g.nome; f.cnpj.value = g.cnpj; itens = g.itens; desenharItens(); });
+      }
+      add(
+        d.aviso ? el('p', { class: 'msg msg-falta' }, d.aviso) : null,
+        escolha ? campo(uid('grp'), 'Contratado desta ata', escolha) : null,
+        el('div', { class: 'grade-campos' }, campo(uid('num'), 'Número da ARP', f.numero, null, true), campo(uid('pre'), 'Pregão', f.pregao), campo(uid('pro'), 'Processo', f.processo),
+          campo(uid('det'), 'Contratado (detentora)', f.detentora, null, true), campo(uid('cnpj'), 'CNPJ do contratado', f.cnpj), campo(uid('cla'), 'Cláusulas de adesão', f.clausulas),
+          campo(uid('ass'), 'Assinatura', f.assinatura), campo(uid('ini'), 'Início da vigência', f.inicio, null, true), campo(uid('fim'), 'Fim da vigência', f.fim, null, true)),
+        campo(uid('obj'), 'Objeto', f.objeto),
+        el('h3', { class: 'mt-1' }, 'Itens'), caixaItens,
+        el('p', { class: 'ajuda mt-05' }, 'Confira se a numeração dos itens é a mesma da ata assinada: no PNCP a numeração segue a da licitação e pode ser diferente.'));
+      coletar = () => {
+        if (!f.numero.value.trim() || !f.detentora.value.trim() || !f.inicio.value || !f.fim.value) throw new Error('Preencha número, contratado e vigência.');
+        return { numero: f.numero.value.trim(), pregao: f.pregao.value.trim() || null, processo: f.processo.value.trim() || null, objeto: f.objeto.value.trim() || null,
+          detentora: f.detentora.value.trim(), cnpj_detentora: f.cnpj.value.replace(/\D/g, '') || null, clausulas_adesao: f.clausulas.value.trim() || null,
+          data_assinatura: f.assinatura.value || null, inicio: f.inicio.value, fim: f.fim.value, itens };
+      };
+    } else {
+      add(el('p', null, 'Ao confirmar, a ARP fica inativa: some do formulário dos municípios e novos pedidos não podem usá-la. Os ofícios já emitidos continuam no histórico.'));
+    }
+    const bOk = el('button', { type: 'button', class: 'btn btn-primario' }, 'Confirmar');
+    const bNao = el('button', { type: 'button', class: 'btn btn-claro' }, 'Ignorar');
+    bOk.addEventListener('click', async () => {
+      let dados; try { dados = coletar(); } catch (e) { toast(e.message); return; }
+      ocupado(bOk, 'Gravando…');
+      try { await D.confirmarAtualizacao(x.id, dados); await recarregar(); rotear(); toast('Atualização confirmada' + (x.tipo === 'prorrogacao' && dados.renova ? ': novo ciclo de quantitativos aberto.' : '.')); }
+      catch (e) { ocupado(bOk); toast(e.message); }
+    });
+    bNao.addEventListener('click', async () => {
+      if (!await confirmar('Ignorar atualização', 'A atualização sai da lista e nada muda no sistema. Ela não volta nas próximas buscas.', 'Ignorar')) return;
+      try { await D.ignorarAtualizacao(x.id); await recarregar(); rotear(); toast('Atualização ignorada.'); } catch (e) { toast(e.message); }
+    });
+    return el('section', { class: 'cartao cartao-pncp' },
+      el('div', { class: 'pncp-topo' }, etq(TIPO_PNCP, x.tipo), el('h2', null, x.resumo)),
+      el('p', { class: 'ajuda' }, 'Encontrada em ' + dataHora(x.criado_em),
+        ata ? [' · ', el('a', { class: 'link', href: '#ata-' + ata.id }, 'Abrir a ARP ' + ata.numero)] : null,
+        x.documento_url ? [' · ', el('a', { class: 'link', href: x.documento_url, target: '_blank', rel: 'noopener' }, (x.documento_titulo || 'Documento') + ' ↗')] : null),
+      corpo, el('div', { class: 'botoes-form mt-1' }, bNao, bOk));
+  }
 
   // ================================================================= SOLICITAÇÕES (formulário online)
   const SIT_SOL = { recebida: ['Recebida', 'etiqueta-pendente'], em_analise: ['Em análise', 'etiqueta-azul'], atendida: ['Atendida', 'etiqueta-ativo'], recusada: ['Recusada', 'etiqueta-desativado'] };
