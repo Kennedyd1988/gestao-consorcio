@@ -50,6 +50,14 @@
       if (!atas.some((a) => a.numero === it.ata_numero)) erros.push(`Itens, linha ${i + 2}: a ARP ${it.ata_numero} não está na aba Atas.`);
       return it;
     });
+    const periodos = aba(wb, 'Vigências').filter((l) => txt(col(l, 'ARP'))).map((l, i) => {
+      const pr = { ata_numero: numeroAta(col(l, 'ARP')), numero: Number(num(col(l, 'Período')) || 1), inicio: data(col(l, 'Início')), fim: data(col(l, 'Fim')),
+        renova_quantitativos: /^s/i.test(txt(col(l, 'Renova'))), instrumento: txt(col(l, 'Instrumento')) || null, observacoes: txt(col(l, 'Observações')) || null };
+      if (!pr.inicio || !pr.fim) erros.push(`Vigências, linha ${i + 2}: informe início e fim.`);
+      else if (pr.fim < pr.inicio) erros.push(`Vigências, linha ${i + 2}: o fim é antes do início.`);
+      if (!atas.some((a) => a.numero === pr.ata_numero)) erros.push(`Vigências, linha ${i + 2}: a ARP ${pr.ata_numero} não está na aba Atas.`);
+      return pr;
+    });
     const orgaos = aba(wb, 'Órgãos').filter((l) => txt(col(l, 'Nome'))).map((l) => {
       const esf = txt(col(l, 'Esfera'));
       return { nome: txt(col(l, 'Nome')), cnpj: cnpj(col(l, 'CNPJ')), municipio: txt(col(l, 'Município')) || null, uf: txt(col(l, 'UF')).toUpperCase() || null,
@@ -58,13 +66,18 @@
     });
     const adesoes = aba(wb, 'Adesões').filter((l) => txt(col(l, 'ARP'))).map((l, i) => {
       const a = { numero_oficio: txt(col(l, 'Ofício CIMOP')) || null, data_oficio: data(col(l, 'Data do ofício')), orgao_nome: txt(col(l, 'Órgão')),
-        oficio_solicitante: txt(col(l, 'Ofício do solicitante')) || null, ata_numero: numeroAta(col(l, 'ARP')), item: Number(num(col(l, 'Item'))), qtd: num(col(l, 'Qtd')) };
+        oficio_solicitante: txt(col(l, 'Ofício do solicitante')) || null, ata_numero: numeroAta(col(l, 'ARP')), item: Number(num(col(l, 'Item'))), qtd: num(col(l, 'Qtd')), periodo: Number(num(col(l, 'Período')) || 1) };
       if (!orgaos.some((o) => R_n(o.nome) === R_n(a.orgao_nome))) erros.push(`Adesões, linha ${i + 2}: o órgão "${a.orgao_nome}" não está na aba Órgãos.`);
       return a;
     }).filter((a) => a.qtd > 0);
     const dupCnpj = orgaos.map((o) => o.cnpj).filter((c, i, arr) => c && arr.indexOf(c) !== i);
     dupCnpj.forEach((c) => erros.push(`Órgãos: o CNPJ ${OFICIO.formatarCnpj(c)} aparece mais de uma vez.`));
-    return { atas, itens, orgaos, adesoes, erros };
+    // Linhas repetidas dentro da própria planilha
+    const vistos = new Set();
+    adesoes.forEach((a, i) => { const k = [a.numero_oficio, R_n(a.orgao_nome), a.ata_numero, a.item, a.periodo].join('|'); if (vistos.has(k)) erros.push(`Adesões, linha ${i + 2}: repetida (mesmo ofício, órgão, ARP, item e período).`); vistos.add(k); });
+    const vi = new Set();
+    itens.forEach((it, i) => { const k = it.ata_numero + '|' + it.numero; if (vi.has(k)) erros.push(`Itens, linha ${i + 2}: o item ${it.numero} da ARP ${it.ata_numero} aparece duas vezes.`); vi.add(k); });
+    return { atas, itens, periodos, orgaos, adesoes, erros };
   }
 
   function modeloVazio() {
@@ -73,9 +86,10 @@
     add('Atas', ['Pregão', 'ARP', 'Processo administrativo', 'Objeto', 'Detentora (contratado)', 'CNPJ da detentora', 'Data de assinatura', 'Vigência até', 'Prorrogada? (Sim/Não)', 'Cláusulas de adesão da ata', 'Observações'],
       ['008/2025', '001/2026', '000/2025', 'Aquisição de insumos para massa asfáltica a frio', 'EMPRESA EXEMPLO LTDA', '00.000.000/0001-00', '10/02/2026', '09/02/2027', 'Não', '4.1 a 4.3', '']);
     add('Itens', ['ARP', 'Item', 'Descrição', 'Unidade', 'Qtd registrada', 'Preço unitário (R$)'], ['001/2026', 1, 'Brita 5/8', 't', 17760, 114.7]);
+    add('Vigências', ['ARP', 'Período', 'Início', 'Fim', 'Renova quantitativos? (Sim/Não)', 'Instrumento', 'Observações'], ['001/2026', 1, '05/01/2026', '05/01/2027', 'Não', 'Vigência original', '']);
     add('Órgãos', ['Nome do órgão/entidade', 'CNPJ', 'Município', 'UF', 'Esfera', 'Responsável (destinatário do ofício)', 'Cargo', 'E-mail'],
       ['Município de Exemplo/RN', '00.000.000/0001-00', 'Exemplo', 'RN', 'Municipal', 'NOME DO RESPONSÁVEL', 'Prefeito Municipal', 'contato@exemplo.rn.gov.br']);
-    add('Adesões', ['Ofício CIMOP', 'Data do ofício', 'Órgão/entidade', 'Ofício do solicitante', 'ARP', 'Item', 'Qtd autorizada'], ['105/2026', '27/10/2026', 'Município de Exemplo/RN', '172/2026', '001/2026', 1, 200]);
+    add('Adesões', ['Ofício CIMOP', 'Data do ofício', 'Órgão/entidade', 'Ofício do solicitante', 'ARP', 'Item', 'Qtd autorizada', 'Período'], ['105/2026', '27/10/2026', 'Município de Exemplo/RN', '172/2026', '001/2026', 1, 200, 1]);
     return XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
   }
 
@@ -84,17 +98,19 @@
     const wb = XLSX.utils.book_new();
     for (const ata of atasSel) {
       const itens = base.itens.filter((i) => i.ata_id === ata.id);
-      const peds = base.pedidos.filter((p) => p.situacao !== 'cancelado').filter((p) => base.pedido_itens.some((pi) => pi.pedido_id === p.id && pi.decisao === 'autorizado' && itens.some((i) => i.id === pi.item_id)));
+      const ciclo = R.cicloAtual(base, ata.id);
+      const noCiclo = (pi) => !ciclo || R.cicloDe(base, pi.periodo_id, ata.id) === ciclo;
+      const peds = base.pedidos.filter((p) => p.situacao !== 'cancelado').filter((p) => base.pedido_itens.some((pi) => pi.pedido_id === p.id && pi.decisao === 'autorizado' && noCiclo(pi) && itens.some((i) => i.id === pi.item_id)));
       const ord = (p) => { const m = String(p.numero_oficio || '').match(/(\d+)\/(\d{4})/); return m ? Number(m[2]) * 10000 + Number(m[1]) : 0; };
       peds.sort((a, b) => ord(a) - ord(b));
       const linhas = [
         [`ARP ${ata.numero}`, '', '', '', 'CONTRATADO:', ata.detentora],
-        [`Pregão ${ata.pregao}`, '', '', '', 'Vigência:', R.dataBR(ata.vigencia_fim)],
+        [`Pregão ${ata.pregao}`, '', '', '', 'Vigência:', R.dataBR(ata.vigencia_fim), ciclo ? 'Ciclo de quantitativos desde ' + R.dataBR((base.periodos.find((p) => p.id === ciclo) || {}).inicio) : ''],
         ['Nº', 'DESCRIÇÃO', 'UND', 'REGISTRADO', 'VL. UNIT.', 'LIMITE 50%', 'LIMITE DOBRO', 'TOTAL ADERIDO', 'SALDO', ...peds.map((p) => base.orgaosPorId[p.orgao_id].nome)],
         ['', '', '', '', '', '', '', '', '', ...peds.map((p) => 'Ofício ' + (p.numero_oficio || '—'))],
       ];
       for (const it of itens) {
-        const vals = peds.map((p) => base.pedido_itens.filter((pi) => pi.pedido_id === p.id && pi.item_id === it.id && pi.decisao === 'autorizado').reduce((s, pi) => s + Number(pi.qtd_autorizada), 0) || null);
+        const vals = peds.map((p) => base.pedido_itens.filter((pi) => pi.pedido_id === p.id && pi.item_id === it.id && pi.decisao === 'autorizado' && noCiclo(pi)).reduce((s, pi) => s + Number(pi.qtd_autorizada), 0) || null);
         const tot = vals.reduce((s, v) => s + (v || 0), 0);
         linhas.push([it.numero, it.descricao, it.unidade, Number(it.qtd_registrada), it.preco_unitario != null ? Number(it.preco_unitario) : null, it.qtd_registrada * 0.5, it.qtd_registrada * 2, tot, it.qtd_registrada * 2 - tot, ...vals]);
       }
@@ -118,5 +134,25 @@
     return XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
   }
 
-  window.PLANILHAS = { ler, modeloVazio, mapa, listaPedidos };
+  async function hashArquivo(arquivo) {
+    const buf = await arquivo.arrayBuffer();
+    const h = await crypto.subtle.digest('SHA-256', buf);
+    return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  // Impressão digital dos DADOS da planilha (a mesma planilha salva de novo no Excel dá o mesmo resultado)
+  async function hashDados(d) {
+    const txt = JSON.stringify({ atas: d.atas, itens: d.itens, periodos: d.periodos, orgaos: d.orgaos, adesoes: d.adesoes });
+    if (window.crypto && crypto.subtle) {
+      const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
+      return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    }
+    let h1 = 0xdeadbeef, h2 = 0x41c6ce57;   // reserva (cyrb53 duplo) para navegador sem crypto.subtle
+    for (let i = 0; i < txt.length; i++) { const c = txt.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return 'c53-' + (h2 >>> 0).toString(16).padStart(8, '0') + (h1 >>> 0).toString(16).padStart(8, '0') + txt.length.toString(16);
+  }
+
+  window.PLANILHAS = { hashArquivo, hashDados, ler, modeloVazio, mapa, listaPedidos };
 })();

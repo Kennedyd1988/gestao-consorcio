@@ -1,6 +1,6 @@
 {
-  "name": "SOFT+ GOV · Gestão de Consórcio",
-  "short_name": "Gestão Consórcio",
+  "name": "SOFT+ Consórcios · Gestão de Consórcio",
+  "short_name": "SOFT+ Consórcios",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

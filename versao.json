@@ -1,7 +1,10 @@
 {
-  "versao": "0.3.1",
+  "versao": "0.4.0",
   "data": "2026-11-17",
   "notas": [
+    "Atas prorrogadas: cada ata tem a aba \"Vigências e prorrogações\". Quando o termo aditivo renova os quantitativos, começa um novo ciclo e os limites de 50% e do dobro contam só as adesões do novo período (o saldo anterior não se soma); dá para consultar o ciclo anterior. Pedido com data fora da vigência é negado. Rode o script 03 na Supabase.",
+    "Importação: a mesma planilha (mesmos dados) não pode ser importada duas vezes; adesões já lançadas, com ou sem nº de ofício, são ignoradas; linhas repetidas na planilha são apontadas. Nova aba \"Vigências\" e coluna \"Período\" nas adesões.",
+    "Novo ícone e nome: SOFT+ Consórcios.",
     "Formulário público: quando não há ata vigente cadastrada, aparece um aviso no lugar da lista vazia.",
     "O sistema passa a se chamar Gestão de Consórcio (SOFT+ GOV), para receber outros módulos além das adesões às atas. Repositório: gestao-consorcio.",
     "Mapa de adesões mais limpo: células brancas com quantidade e uma barrinha do uso dos 50% (cor só na barra; vermelho quando passa do limite), ofícios em etiquetas pequenas no cabeçalho, botão \"órgão(s)\" na linha do item e linha de valor autorizado discreta.",

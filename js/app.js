@@ -165,15 +165,22 @@
     const d = diasAte(a.vigencia_fim);
     if (d < 0) return el('span', { class: 'etiqueta etiqueta-desativado' }, 'Vencida em ' + R.dataBR(a.vigencia_fim));
     if (d <= 60) return el('span', { class: 'etiqueta etiqueta-pendente' }, 'Vence em ' + d + ' dia(s) · ' + R.dataBR(a.vigencia_fim));
-    return el('span', { class: 'etiqueta etiqueta-ativo' }, 'Vigente até ' + R.dataBR(a.vigencia_fim));
+    const ps = R.periodosDa(estado.base, a.id);
+    return el('span', { class: 'etiqueta etiqueta-ativo' }, (ps.length > 1 ? 'Prorrogada até ' : 'Vigente até ') + R.dataBR(a.vigencia_fim));
   }
 
   // ---------------------------------------------------------------- cálculos sobre a base
+  // Ciclo de quantitativos em exibição para cada ata (padrão: o atual)
+  estado.ciclos = {};
+  const cicloVer = (ataId) => (estado.ciclos[ataId] !== undefined ? estado.ciclos[ataId] : R.cicloAtual(estado.base, ataId));
+  const noCiclo = (pi, ataId) => { const c = cicloVer(ataId); return !c || R.cicloDe(estado.base, pi.periodo_id, ataId) === c; };
   function consumo(itemId, ignorar) {
     const b = estado.base; let tot = 0; const porOrg = {};
+    const ataId = (b.itensPorId[itemId] || {}).ata_id;
     for (const pi of b.pedido_itens) {
       if (pi.item_id !== itemId || pi.decisao !== 'autorizado') continue;
       const p = b.pedidosPorId[pi.pedido_id]; if (!p || p.situacao === 'cancelado' || p.id === ignorar) continue;
+      if (!noCiclo(pi, ataId)) continue;
       tot += Number(pi.qtd_autorizada); porOrg[p.orgao_id] = (porOrg[p.orgao_id] || 0) + Number(pi.qtd_autorizada);
     }
     return { tot, porOrg };
@@ -315,7 +322,7 @@
     $('btn-topo-novo').hidden = !podeEditar();
     if (D.modo === 'demo') {
       const f = $('faixa-demo'); f.hidden = false;
-      f.replaceChildren(el('strong', null, 'Prévia de demonstração.'), ' Os dados ficam só neste navegador (histórico migrado da planilha; vigências fictícias). Nada é gravado no banco.',
+      f.replaceChildren(el('strong', null, 'Prévia de demonstração.'), ' Os dados ficam só neste navegador (atas e histórico da planilha de importação). Nada é gravado no banco.',
         el('a', { class: 'link', href: '#solicitar' }, 'Ver o formulário do município ↗'),
         el('button', { type: 'button', class: 'link', onclick: async () => { if (await confirmar('Recomeçar a demonstração', 'Apaga o que você lançou nesta prévia e volta ao histórico migrado da planilha.', 'Recomeçar', true)) { estado.base = await D.reiniciarDemo(); rotear(); toast('Demonstração reiniciada.'); } } }, 'Recomeçar a demonstração'));
     }
@@ -359,7 +366,7 @@
     }
     const ultimos = [...b.pedidos].filter((p) => p.origem !== 'migracao').sort((x, y) => (y.criado_em || '').localeCompare(x.criado_em || '')).slice(0, 8);
     const nome = (estado.usuario.nome || '').split(' ')[0];
-    rc(c, 
+    rc(c,
       cabecalho(nome ? 'Olá, ' + nome : 'Início', 'Gestão de Consórcio · adesões às Atas de Registro de Preços', podeEditar() ? el('a', { class: 'btn btn-primario', href: '#novo' }, '+ Novo pedido de adesão') : null),
       el('div', { class: 'resumo-pntp' },
         el('div', null, el('span', { class: 'rotulo' }, 'Atas vigentes'), el('strong', { class: 'num-grande' }, vigentes.length), el('small', null, b.atas.length + ' cadastrada(s)')),
@@ -557,7 +564,7 @@
     }
 
     const solOrigem = r.solicitacao_id && b.solicitacoes.find((x) => x.id === r.solicitacao_id);
-    rc(c, 
+    rc(c,
       cabecalho('Novo pedido de adesão', 'Digite as quantidades pedidas: o sistema confere os limites na hora e gera o ofício ao registrar.',
         el('button', { type: 'button', class: 'btn btn-claro', onclick: async () => { if (await confirmar('Limpar o formulário', 'Apaga o que foi digitado neste pedido.', 'Limpar', true)) { rascunho = null; rotear(); } } }, 'Limpar')),
       solOrigem ? el('p', { class: 'msg msg-info' }, 'Lançando a solicitação ', el('strong', null, solOrigem.protocolo), ' recebida pelo formulário online. Confira as quantidades, informe o nº do ofício e registre: a solicitação fica como atendida.') : null,
@@ -635,7 +642,7 @@
       acoes.splice(1, 0, el('button', { type: 'button', class: 'btn btn-claro', onclick: () => editarPedido(p) }, 'Editar dados do ofício'),
         el('button', { type: 'button', class: 'btn btn-claro btn-texto-perigo', onclick: () => cancelarPedido(p) }, 'Cancelar pedido'));
     }
-    rc(c, 
+    rc(c,
       cabecalho('Ofício nº ' + (p.numero_oficio || 's/n'), o.nome, ...acoes),
       p.situacao === 'cancelado' ? el('p', { class: 'msg msg-erro' }, 'Pedido cancelado: ' + (p.motivo_cancelamento || '') + ' O saldo voltou para as atas.') : null,
       p.origem === 'migracao' ? el('p', { class: 'msg msg-info' }, 'Pedido migrado da planilha antiga: as quantidades foram gravadas como autorizadas na época, sem nova conferência.') : null,
@@ -726,13 +733,62 @@
       el('dt', null, 'Contratado'), el('dd', null, a.detentora), el('dt', null, 'CNPJ'), el('dd', null, a.cnpj_detentora ? O.formatarCnpj(a.cnpj_detentora) : '—'),
       el('dt', null, 'Assinatura'), el('dd', null, R.dataBR(a.data_assinatura) || '—'), el('dt', null, 'Vigência'), el('dd', null, etiquetaVigencia(a), a.prorrogada ? ' (prorrogada)' : ''),
       el('dt', null, 'Cláusulas de adesão'), el('dd', null, a.clausulas_adesao || '—'), el('dt', null, 'Observações'), el('dd', null, a.observacoes || '—'));
-    rc(c, 
+    const ciclos = R.ciclosDa(b, a.id);
+    const atual = R.cicloAtual(b, a.id);
+    const selCiclo = ciclos.length > 1 ? sel(ciclos.map((cc, k) => [cc.id, 'Ciclo ' + (k + 1) + ': ' + R.dataBR(cc.inicio) + ' a ' + R.dataBR(cc.fim) + (cc.id === atual ? ' (atual)' : '')]), cicloVer(a.id), { 'aria-label': 'Ciclo de quantitativos' }) : null;
+    if (selCiclo) selCiclo.addEventListener('change', () => { estado.ciclos[a.id] = selCiclo.value; rotear(); });
+    const abaVig = () => {
+      const ps = R.periodosDa(b, a.id);
+      return [
+        el('p', { class: 'ajuda' }, 'Cada prorrogação é um período. Se o termo aditivo renovar os quantitativos, começa um novo ciclo: os limites de 50% e do dobro passam a contar só as adesões do novo ciclo e o saldo anterior não se soma. Prorrogação sem renovação continua o mesmo ciclo.'),
+        ps.length ? tabela(['Período', 'Início', 'Fim', 'Quantitativos', 'Instrumento', ''], ps.map((p) => el('tr', null,
+          el('td', null, p.numero === 1 ? 'Vigência original' : p.numero - 1 + 'ª prorrogação'), el('td', { class: 'num' }, R.dataBR(p.inicio)), el('td', { class: 'num' }, R.dataBR(p.fim)),
+          el('td', null, p.numero === 1 ? 'Originais' : p.renova_quantitativos ? el('span', { class: 'etiqueta etiqueta-ativo' }, 'Renovados (novo ciclo)') : el('span', { class: 'etiqueta' }, 'Mantidos (mesmo saldo)')),
+          el('td', null, p.instrumento || '—', p.observacoes ? el('span', { class: 'sub-linha' }, p.observacoes) : null),
+          el('td', { class: 'acoes' }, podeEditar() ? el('button', { type: 'button', class: 'link', onclick: () => formPeriodo(a, p) }, 'Editar') : null))), { 'data-sem-paginas': '1' })
+          : el('p', { class: 'vazio' }, 'Nenhum período cadastrado. Cadastre a vigência original da ata.'),
+        podeEditar() ? el('div', { class: 'linha-botoes mt-05' }, el('button', { type: 'button', class: 'btn btn-primario', onclick: () => formPeriodo(a, {}) }, ps.length ? '+ Registrar prorrogação' : '+ Vigência original')) : null];
+    };
+    rc(c,
       cabecalho('ARP ' + a.numero, a.detentora + ' · Pregão ' + a.pregao, el('a', { class: 'btn btn-claro', href: '#atas' }, '‹ Atas'),
         el('button', { type: 'button', class: 'btn btn-claro', onclick: () => baixar('Mapa de adesões - ARP ' + a.numero.replace('/', '-') + '.xlsx', PL.mapa(b, [a]), XLSX_T) }, 'Mapa (Excel)'),
         podeEditar() ? el('button', { type: 'button', class: 'btn btn-claro', onclick: () => formItem(a, {}) }, '+ Item') : null,
         podeEditar() ? el('button', { type: 'button', class: 'btn btn-primario', onclick: () => formAta(a) }, 'Editar ata') : null),
-      abas([['itens', 'Itens e saldos (' + itens.length + ')', abaItens], ['mapa', 'Mapa de adesões', abaMapa], ['dados', 'Dados da ata', abaDados]]));
+      selCiclo ? el('div', { class: 'faixa-ciclo' }, el('strong', null, 'Quantitativos renovados.'), ' Saldos e mapa do ciclo:', selCiclo,
+        cicloVer(a.id) !== atual ? el('span', { class: 'etiqueta etiqueta-pendente' }, 'vendo ciclo anterior') : null) : null,
+      abas([['itens', 'Itens e saldos (' + itens.length + ')', abaItens], ['mapa', 'Mapa de adesões', abaMapa], ['vigencias', 'Vigências e prorrogações (' + R.periodosDa(b, a.id).length + ')', abaVig], ['dados', 'Dados da ata', abaDados]]));
   };
+
+  function formPeriodo(a, p) {
+    const ps = R.periodosDa(estado.base, a.id);
+    const ult = ps[ps.length - 1];
+    const somaDias = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
+    const umAno = (d) => { const x = new Date(d + 'T12:00:00'); x.setFullYear(x.getFullYear() + 1); return x.toISOString().slice(0, 10); };
+    const novo = !p.id;
+    const numero = p.numero || (ult ? ult.numero + 1 : 1);
+    const ini0 = p.inicio || (ult ? somaDias(ult.fim, 1) : a.data_assinatura || '');
+    const f = { inicio: el('input', { type: 'date', value: ini0 }), fim: el('input', { type: 'date', value: p.fim || (ini0 ? (ult ? somaDias(umAno(ini0), -1) : umAno(ini0)) : '') }),
+      renova: el('input', { type: 'checkbox', checked: !!p.renova_quantitativos }), instrumento: txt(p.instrumento || (numero === 1 ? 'Vigência original' : numero - 1 + 'º Termo Aditivo'), { maxlength: 160 }),
+      obs: area(p.observacoes, { rows: 2 }) };
+    const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar');
+    const d = abrirDialogo((numero === 1 ? 'Vigência original' : numero - 1 + 'ª prorrogação') + ' · ARP ' + a.numero, el('div', null,
+      el('div', { class: 'grade-campos' }, campo('fp-ini', 'Início', f.inicio, null, true), campo('fp-fim', 'Fim', f.fim, null, true)),
+      numero > 1 ? el('label', { class: 'checkbox declaracao' }, f.renova, ' O termo aditivo renova os quantitativos originalmente registrados (começa novo ciclo: saldo e limites de 50% e do dobro recomeçam; o saldo não usado do período anterior não se soma).') : null,
+      campo('fp-inst', 'Instrumento', f.instrumento, 'Ex.: 1º Termo Aditivo, de 13/11/2026'), campo('fp-obs', 'Observações', f.obs)),
+      [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), btn]);
+    btn.addEventListener('click', async () => {
+      if (!marcarErro(f.inicio, f.inicio.value ? '' : 'Informe o início.')) return;
+      if (!marcarErro(f.fim, !f.fim.value ? 'Informe o fim.' : f.fim.value < f.inicio.value ? 'O fim é antes do início.' : '')) return;
+      const anterior = ps.find((x) => x.numero === numero - 1);
+      if (anterior && !marcarErro(f.inicio, f.inicio.value <= anterior.fim ? 'Começa antes do fim do período anterior (' + R.dataBR(anterior.fim) + ').' : '')) return;
+      ocupado(btn, 'Salvando…');
+      try {
+        await D.salvar('periodos', { ...(novo ? {} : { id: p.id }), ata_id: a.id, numero, inicio: f.inicio.value, fim: f.fim.value, renova_quantitativos: numero > 1 && f.renova.checked,
+          instrumento: f.instrumento.value.trim() || null, observacoes: f.obs.value.trim() || null });
+        await recarregar(); delete estado.ciclos[a.id]; d.close(); toast(numero === 1 ? 'Vigência salva.' : 'Prorrogação registrada.'); rotear();
+      } catch (e) { toast(e.message, true); ocupado(btn); }
+    });
+  }
 
   function detalheItem(i) {
     const b = estado.base, cons = consumo(i.id);
@@ -810,10 +866,10 @@
     const est = mapaAdesoes.estado || (mapaAdesoes.estado = { modo: 'orgao', soComAdesao: true, busca: '' });
     const caixa = el('div', { class: 'mapa' });
     // Pedidos válidos da ata e o que cada um autorizou por item
-    const peds = b.pedidos.filter((p) => p.situacao !== 'cancelado' && b.pedido_itens.some((pi) => pi.pedido_id === p.id && pi.decisao === 'autorizado' && itens.some((i) => i.id === pi.item_id)))
+    const peds = b.pedidos.filter((p) => p.situacao !== 'cancelado' && b.pedido_itens.some((pi) => pi.pedido_id === p.id && pi.decisao === 'autorizado' && noCiclo(pi, a.id) && itens.some((i) => i.id === pi.item_id)))
       .sort((x, y) => ordOficio(x) - ordOficio(y));
     const qtd = {}; // qtd[pedidoId][itemId]
-    for (const pi of b.pedido_itens) if (pi.decisao === 'autorizado' && peds.some((p) => p.id === pi.pedido_id)) { (qtd[pi.pedido_id] = qtd[pi.pedido_id] || {})[pi.item_id] = (qtd[pi.pedido_id][pi.item_id] || 0) + Number(pi.qtd_autorizada); }
+    for (const pi of b.pedido_itens) if (pi.decisao === 'autorizado' && noCiclo(pi, a.id) && peds.some((p) => p.id === pi.pedido_id)) { (qtd[pi.pedido_id] = qtd[pi.pedido_id] || {})[pi.item_id] = (qtd[pi.pedido_id][pi.item_id] || 0) + Number(pi.qtd_autorizada); }
     function desenhar() {
       // Colunas: um órgão (somando seus ofícios) ou um ofício
       let colunas;
@@ -890,6 +946,7 @@
     for (const pi of b.pedido_itens) {
       if (pi.item_id !== id) continue;
       const p = b.pedidosPorId[pi.pedido_id]; if (!p || p.situacao === 'cancelado') continue;
+      if (!noCiclo(pi, i.ata_id)) continue;
       (pi.decisao === 'autorizado' ? aut : neg).push({ pi, p, o: b.orgaosPorId[p.orgao_id] });
     }
     const porOrg = new Map();
@@ -1252,30 +1309,42 @@
       try {
         const d = await PL.ler(file);
         const b = estado.base;
+        const hash = await PL.hashDados(d);
+        const ja = await D.importacaoExistente(hash).catch(() => null);
         const novasAtas = d.atas.filter((a) => !b.atas.some((x) => x.numero === a.numero)).length;
         const grupos = D.agruparAdesoes(d.adesoes);
-        const btn = el('button', { type: 'button', class: 'btn btn-primario', disabled: d.erros.length ? true : null }, 'Importar agora');
+        // Adesões que já estão no sistema (mesmo ofício do CIMOP e mesmo órgão) são ignoradas
+        const existe = (g) => D.grupoJaExiste(b, g);
+        const repetidas = grupos.filter(existe).length;
+        const bloqueado = !!ja || d.erros.length > 0;
+        const btn = el('button', { type: 'button', class: 'btn btn-primario', disabled: bloqueado ? true : null }, 'Importar agora');
         const prog = el('p', { class: 'ajuda' });
         rc(resultado, el('section', { class: 'cartao' }, el('h2', null, 'Conferência: ' + file.name),
           el('div', { class: 'importar-resumo' },
             el('div', null, el('span', { class: 'rotulo' }, 'Atas'), el('strong', null, d.atas.length), el('small', null, novasAtas + ' nova(s) · ' + (d.atas.length - novasAtas) + ' atualizada(s)')),
             el('div', null, el('span', { class: 'rotulo' }, 'Itens'), el('strong', null, d.itens.length), el('small', null, d.itens.filter((i) => i.preco_unitario == null).length + ' sem preço')),
             el('div', null, el('span', { class: 'rotulo' }, 'Órgãos'), el('strong', null, d.orgaos.length), el('small', null, d.orgaos.filter((o) => !o.cnpj).length + ' sem CNPJ')),
-            el('div', null, el('span', { class: 'rotulo' }, 'Adesões (histórico)'), el('strong', null, grupos.length), el('small', null, d.adesoes.length + ' linha(s) de item'))),
-          d.erros.length ? el('div', { class: 'msg msg-erro' }, el('strong', null, 'Corrija na planilha e envie de novo:'), el('ul', null, d.erros.slice(0, 30).map((e) => el('li', null, e))), d.erros.length > 30 ? el('p', null, '+ ' + (d.erros.length - 30) + ' erro(s)') : null)
+            el('div', null, el('span', { class: 'rotulo' }, 'Vigências'), el('strong', null, d.periodos.length), el('small', null, d.periodos.filter((p) => p.renova_quantitativos).length + ' com renovação')),
+            el('div', null, el('span', { class: 'rotulo' }, 'Adesões (histórico)'), el('strong', null, grupos.length - repetidas), el('small', null, repetidas ? repetidas + ' já existem e serão ignoradas' : d.adesoes.length + ' linha(s) de item'))),
+          ja ? el('div', { class: 'msg msg-erro' }, el('strong', null, 'Esta planilha já foi importada'), ' em ' + new Date(ja.criado_em).toLocaleString('pt-BR') + (ja.criado_por_nome ? ' por ' + ja.criado_por_nome : '') + '. Os mesmos dados não podem ser importados duas vezes. Para corrigir algo, altere a planilha (ou edite direto no sistema) e envie de novo.')
+          : d.erros.length ? el('div', { class: 'msg msg-erro' }, el('strong', null, 'Corrija na planilha e envie de novo:'), el('ul', null, d.erros.slice(0, 30).map((e) => el('li', null, e))), d.erros.length > 30 ? el('p', null, '+ ' + (d.erros.length - 30) + ' erro(s)') : null)
             : el('p', { class: 'msg msg-ok' }, 'Planilha no formato certo. Atas, itens e órgãos que já existem são atualizados; adesões que já estão no sistema (mesmo ofício e órgão) não são duplicadas.'),
           el('div', { class: 'linha-botoes' }, btn), prog));
         btn.addEventListener('click', async () => {
           ocupado(btn, 'Importando…');
           try {
+            const de2 = await D.importacaoExistente(hash).catch(() => null);
+            if (de2) throw new Error('Esta planilha acabou de ser importada por outra pessoa.');
             const r = await D.importar(d, (n, t) => (prog.textContent = 'Gravando adesões: ' + n + ' de ' + t + '…'));
+            await D.registrarImportacao({ hash, arquivo: file.name, resumo: r }).catch(() => {});
             await recarregar();
             prog.textContent = '';
-            resultado.prepend(el('p', { class: 'msg msg-ok' }, `Importado: ${r.atas} ata(s), ${r.itens} item(ns), ${r.orgaos} órgão(s) e ${r.pedidos} adesão(ões)` + (r.ignorados ? ` (${r.ignorados} já existiam e foram mantidas).` : '.')));
+            resultado.prepend(el('p', { class: 'msg msg-ok' }, `Importado: ${r.atas} ata(s), ${r.itens} item(ns), ${r.periodos || 0} período(s) de vigência, ${r.orgaos} órgão(s) e ${r.pedidos} adesão(ões)` + (r.ignorados ? ` (${r.ignorados} já existiam e foram ignoradas).` : '.')));
             btn.remove(); toast('Importação concluída.');
           } catch (e) { toast(e.message, true); ocupado(btn); }
         });
       } catch (e) { rc(resultado, el('p', { class: 'msg msg-erro' }, e.message)); }
+      arq.value = '';   // permite escolher o mesmo arquivo de novo (e ver o bloqueio)
     });
     rc(c, cabecalho('Importar planilha', 'Atas, itens, órgãos e histórico de adesões a partir da planilha-modelo.'),
       el('div', { class: 'grade grade-2' },

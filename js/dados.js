@@ -12,6 +12,7 @@
 
   function indexar(b) {
     b.atasPorId = {}; b.itensPorId = {}; b.orgaosPorId = {}; b.pedidosPorId = {};
+    b.periodos = b.periodos || []; b.importacoes = b.importacoes || [];
     b.solicitacoes = (b.solicitacoes || []).sort((x, y) => (y.criado_em || '').localeCompare(x.criado_em || ''));
     b.atas.forEach((a) => { b.atasPorId[a.id] = a; a._qtdItens = 0; });
     b.itens.forEach((i) => { b.itensPorId[i.id] = i; if (b.atasPorId[i.ata_id]) b.atasPorId[i.ata_id]._qtdItens++; });
@@ -25,12 +26,12 @@
 
   // ===================== DEMONSTRAÇÃO =====================
   function criarDemo() {
-    const CHAVE = 'softplus-adesoes-demo-v1';
+    const CHAVE = 'gestao-consorcio-demo-v2';
     let base;
     const salvarLocal = () => { try { localStorage.setItem(CHAVE, JSON.stringify(limpo())); } catch (e) {} };
-    const limpo = () => ({ config: base.config, atas: base.atas, itens: base.itens, orgaos: base.orgaos, pedidos: base.pedidos, pedido_itens: base.pedido_itens, solicitacoes: base.solicitacoes });
+    const limpo = () => ({ config: base.config, atas: base.atas, itens: base.itens, orgaos: base.orgaos, pedidos: base.pedidos, pedido_itens: base.pedido_itens, solicitacoes: base.solicitacoes, periodos: base.periodos, importacoes: base.importacoes });
     function semente() {
-      const b = { config: { ...CONFIG_PADRAO }, atas: [], itens: [], orgaos: [], pedidos: [], pedido_itens: [], solicitacoes: [] };
+      const b = { config: { ...CONFIG_PADRAO }, atas: [], itens: [], orgaos: [], pedidos: [], pedido_itens: [], solicitacoes: [], periodos: [], importacoes: [] };
       if (window.DEMO_SEMENTE) importarLocal(b, window.DEMO_SEMENTE);
       // Uma solicitação de exemplo, como se tivesse chegado pelo formulário online
       const it = (arp, n) => { const a = b.atas.find((x) => x.numero === arp); const i = a && b.itens.find((x) => x.ata_id === a.id && x.numero === n); return i && i.id; };
@@ -61,20 +62,24 @@
         const lista = base[tabela];
         if (!reg.id) { reg.id = uid(); lista.push(reg); } else { const i = lista.findIndex((x) => x.id === reg.id); i >= 0 ? (lista[i] = { ...lista[i], ...reg }) : lista.push(reg); }
         if (tabela === 'pedidos' && reg.numero_oficio && lista.some((p) => p.id !== reg.id && p.numero_oficio === reg.numero_oficio)) throw new Error('Já existe um ofício com o número ' + reg.numero_oficio + '.');
+        if (tabela === 'periodos') sincronizarVigencia(base, reg.ata_id);
         salvarLocal(); indexar(base); return reg;
       },
       async salvarConfig(c) { base.config = { ...base.config, ...c }; salvarLocal(); },
+      async importacaoExistente(hash) { return (base.importacoes || []).find((x) => x.hash === hash) || null; },
+      async registrarImportacao(r) { base.importacoes = base.importacoes || []; base.importacoes.push({ ...r, id: uid(), criado_em: new Date().toISOString(), criado_por_nome: 'Kennedy Dantas Francelino' }); salvarLocal(); },
       async registrarPedido(p) {
         indexar(base);
         if (p.numero_oficio && base.pedidos.some((x) => x.numero_oficio === p.numero_oficio)) throw new Error('Já existe um ofício com o número ' + p.numero_oficio + '.');
         const org = base.orgaosPorId[p.orgao_id];
-        const res = p.origem === 'migracao' ? p.itens.map((l) => ({ item: base.itensPorId[l.item_id], q: Number(l.qtd), decisao: 'autorizado', ...R.usado(base, l.item_id, org.id) }))
+        const perMig = (l) => { const it = base.itensPorId[l.item_id]; const ps = R.periodosDa(base, it.ata_id); const pm = l.periodo ? ps.find((x) => x.numero === Number(l.periodo)) : (p.data_oficio ? R.periodoNaData(base, it.ata_id, p.data_oficio) : ps[0]); return pm ? pm.id : null; };
+        const res = p.origem === 'migracao' ? p.itens.map((l) => ({ item: base.itensPorId[l.item_id], q: Number(l.qtd), decisao: 'autorizado', periodo_id: perMig(l), ...R.usado(base, l.item_id, org.id, null, null) }))
           : R.analisar(base, org, p.data_oficio, p.itens);
         const ped = { id: uid(), numero_oficio: p.numero_oficio || null, data_oficio: p.data_oficio, orgao_id: org.id, oficio_solicitante: p.oficio_solicitante, data_solicitante: p.data_solicitante,
           finalidade: p.finalidade, anexos_texto: p.anexos_texto, origem: p.origem || 'sistema', situacao: R.situacao(res), criado_em: new Date().toISOString(), criado_por_nome: 'Kennedy Dantas Francelino' };
         base.pedidos.push(ped);
         res.forEach((r) => base.pedido_itens.push({ id: uid(), pedido_id: ped.id, item_id: r.item.id, qtd_solicitada: r.q, qtd_autorizada: r.decisao === 'autorizado' ? r.q : 0,
-          decisao: r.decisao, motivo: r.motivo || null, usado_orgao_antes: r.usadoOrgao ?? r.org, usado_total_antes: r.usadoTotal ?? r.tot }));
+          decisao: r.decisao, motivo: r.motivo || null, usado_orgao_antes: r.usadoOrgao ?? r.org, usado_total_antes: r.usadoTotal ?? r.tot, periodo_id: r.periodo_id || null }));
         salvarLocal(); indexar(base); return ped.id;
       },
       async cancelarPedido(id, motivo) { const p = base.pedidos.find((x) => x.id === id); p.situacao = 'cancelado'; p.motivo_cancelamento = motivo; salvarLocal(); },
@@ -131,6 +136,13 @@
       if (!x) { x = { id: uid(), ata_id: ata.id }; b.itens.push(x); }
       const { ata_numero, ...resto } = i; Object.assign(x, resto); resumo.itens++;
     }
+    for (const pr of d.periodos || []) {
+      const ata = b.atas.find((y) => y.numero === pr.ata_numero); if (!ata) continue;
+      let x = b.periodos.find((y) => y.ata_id === ata.id && y.numero === pr.numero);
+      if (!x) { x = { id: uid(), ata_id: ata.id }; b.periodos.push(x); }
+      const { ata_numero, ...resto } = pr; Object.assign(x, resto); resumo.periodos = (resumo.periodos || 0) + 1;
+      sincronizarVigencia(b, ata.id);
+    }
     for (const o of d.orgaos) {
       let x = (o.cnpj && b.orgaos.find((y) => y.cnpj === o.cnpj)) || b.orgaos.find((y) => R_norm(y.nome) === R_norm(o.nome));
       if (!x) { x = { id: uid() }; b.orgaos.push(x); }
@@ -138,7 +150,7 @@
     }
     indexar(b);
     for (const g of agruparAdesoes(d.adesoes)) {
-      if (g.numero_oficio && b.pedidos.some((p) => p.numero_oficio === g.numero_oficio && b.orgaosPorId[p.orgao_id] && R_norm(b.orgaosPorId[p.orgao_id].nome) === R_norm(g.orgao_nome))) { resumo.ignorados++; continue; }
+      if (grupoJaExiste(b, g)) { resumo.ignorados++; continue; }
       const org = b.orgaos.find((y) => R_norm(y.nome) === R_norm(g.orgao_nome)); if (!org) continue;
       const ped = { id: uid(), numero_oficio: g.numero_oficio, data_oficio: g.data_oficio, orgao_id: org.id, oficio_solicitante: g.oficio_solicitante, origem: 'migracao', situacao: 'autorizado', criado_em: new Date().toISOString(), criado_por_nome: 'Migração da planilha' };
       if (ped.numero_oficio && b.pedidos.some((p) => p.numero_oficio === ped.numero_oficio)) ped.numero_oficio = ped.numero_oficio + ' (' + (org.municipio || org.nome) + ')';
@@ -146,13 +158,32 @@
       for (const l of g.linhas) {
         const ata = b.atas.find((y) => y.numero === l.ata_numero); const it = ata && b.itens.find((y) => y.ata_id === ata.id && y.numero === l.item);
         if (!it) continue;
-        b.pedido_itens.push({ id: uid(), pedido_id: ped.id, item_id: it.id, qtd_solicitada: l.qtd, qtd_autorizada: l.qtd, decisao: 'autorizado' });
+        const ps = b.periodos.filter((x) => x.ata_id === ata.id);
+        const pm = l.periodo ? ps.find((x) => x.numero === Number(l.periodo)) : ps.find((x) => x.numero === 1);
+        b.pedido_itens.push({ id: uid(), pedido_id: ped.id, item_id: it.id, qtd_solicitada: l.qtd, qtd_autorizada: l.qtd, decisao: 'autorizado', periodo_id: pm ? pm.id : null });
       }
       resumo.pedidos++;
     }
     return resumo;
   }
+  function sincronizarVigencia(b, ataId) {
+    const ps = (b.periodos || []).filter((p) => p.ata_id === ataId); const a = b.atas.find((x) => x.id === ataId);
+    if (a && ps.length) { a.vigencia_fim = ps.map((p) => p.fim).sort().pop(); a.prorrogada = ps.length > 1; }
+  }
   const R_norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+  // Assinatura de um pedido sem nº de ofício: órgão + itens + quantidades (para não duplicar na reimportação)
+  function assinaturaGrupo(g) { return R_norm(g.orgao_nome) + '#' + g.linhas.map((l) => l.ata_numero + '|' + l.item + '|' + Number(l.qtd)).sort().join(';'); }
+  function assinaturaPedido(b, p, atasPorId, itensPorId) {
+    const o = (b.orgaosPorId || {})[p.orgao_id] || b.orgaos.find((x) => x.id === p.orgao_id);
+    return R_norm(o ? o.nome : '') + '#' + b.pedido_itens.filter((pi) => pi.pedido_id === p.id).map((pi) => { const it = itensPorId[pi.item_id]; return (atasPorId[it.ata_id] || {}).numero + '|' + it.numero + '|' + Number(pi.qtd_solicitada); }).sort().join(';');
+  }
+  function grupoJaExiste(b, g) {
+    if (g.numero_oficio) return b.pedidos.some((p) => (p.numero_oficio === g.numero_oficio || String(p.numero_oficio || '').startsWith(g.numero_oficio + ' (')) && R_norm(((b.orgaosPorId || {})[p.orgao_id] || b.orgaos.find((x) => x.id === p.orgao_id) || {}).nome) === R_norm(g.orgao_nome));
+    const ap = Object.fromEntries(b.atas.map((a) => [a.id, a])), ip = Object.fromEntries(b.itens.map((i) => [i.id, i]));
+    const alvo = assinaturaGrupo(g);
+    return b.pedidos.some((p) => !p.numero_oficio && assinaturaPedido(b, p, ap, ip) === alvo);
+  }
 
   // Um pedido = mesmo ofício do CIMOP + mesmo órgão (sem ofício: órgão + ARP)
   function agruparAdesoes(ads) {
@@ -162,7 +193,7 @@
       if (!m.has(k)) m.set(k, { numero_oficio: a.numero_oficio || null, data_oficio: a.data_oficio || null, orgao_nome: a.orgao_nome, oficio_solicitante: a.oficio_solicitante || null, linhas: [] });
       const g = m.get(k);
       g.data_oficio = g.data_oficio || a.data_oficio; g.oficio_solicitante = g.oficio_solicitante || a.oficio_solicitante;
-      g.linhas.push({ ata_numero: a.ata_numero, item: a.item, qtd: a.qtd });
+      g.linhas.push({ ata_numero: a.ata_numero, item: a.item, qtd: a.qtd, periodo: a.periodo || null });
     }
     return [...m.values()];
   }
@@ -197,10 +228,11 @@
       async esqueci(email) { ok(await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })); },
       async trocarSenha(nova) { ok(await sb.auth.updateUser({ password: nova })); const { data } = await sb.auth.getUser(); await sb.from('usuarios').update({ troca_senha: false }).eq('id', data.user.id); },
       async carregar() {
-        const [config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes] = await Promise.all([
+        const [config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes, periodos] = await Promise.all([
           sb.from('configuracoes').select('*').eq('id', 1).single().then(ok), tudo('atas'), tudo('itens'), tudo('orgaos'), tudo('pedidos'), tudo('pedido_itens'),
-          tudo('solicitacoes', 'criado_em').catch(() => [])]);   // sem o script 02: lista vazia
-        return indexar({ config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes });
+          tudo('solicitacoes', 'criado_em').catch(() => []),   // sem o script 02: lista vazia
+          tudo('periodos').catch(() => [])]);                    // sem o script 03: sem períodos
+        return indexar({ config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes, periodos });
       },
       async salvar(tabela, reg) {
         const { id, ...resto } = Object.fromEntries(Object.entries(reg).filter(([k]) => !k.startsWith('_')));
@@ -219,6 +251,8 @@
         const itens = d.itens.filter((i) => idAta[i.ata_numero]).map(({ ata_numero, ...i }) => ({ ...i, ata_id: idAta[ata_numero] }));
         for (let k = 0; k < itens.length; k += 500) ok(await sb.from('itens').upsert(itens.slice(k, k + 500), { onConflict: 'ata_id,numero' }));
         resumo.itens = itens.length;
+        const pers = (d.periodos || []).filter((p) => idAta[p.ata_numero]).map(({ ata_numero, ...p }) => ({ ...p, ata_id: idAta[ata_numero] }));
+        if (pers.length) { ok(await sb.from('periodos').upsert(pers, { onConflict: 'ata_id,numero' })); resumo.periodos = pers.length; }
         const existentes = await tudo('orgaos');
         for (const o of d.orgaos) {
           const x = (o.cnpj && existentes.find((y) => y.cnpj === o.cnpj)) || existentes.find((y) => R_norm(y.nome) === R_norm(o.nome));
@@ -229,15 +263,16 @@
         }
         const todosItens = await tudo('itens');
         const pedidos = await tudo('pedidos');
+        const snap = { atas: todasAtas, itens: todosItens, orgaos: existentes, pedidos, pedido_itens: await tudo('pedido_itens') };
         const grupos = agruparAdesoes(d.adesoes);
         let n = 0;
         for (const g of grupos) {
           aoProgredir && aoProgredir(++n, grupos.length);
           const org = existentes.find((y) => R_norm(y.nome) === R_norm(g.orgao_nome)); if (!org) continue;
-          if (g.numero_oficio && pedidos.some((p) => p.numero_oficio === g.numero_oficio && p.orgao_id === org.id)) { resumo.ignorados++; continue; }
+          if (grupoJaExiste(snap, g)) { resumo.ignorados++; continue; }
           let num = g.numero_oficio;
           if (num && pedidos.some((p) => p.numero_oficio === num)) num = num + ' (' + (org.municipio || org.nome) + ')';
-          const linhas = g.linhas.map((l) => ({ item_id: (todosItens.find((i) => i.ata_id === idAta[l.ata_numero] && i.numero === l.item) || {}).id, qtd: l.qtd })).filter((l) => l.item_id);
+          const linhas = g.linhas.map((l) => ({ item_id: (todosItens.find((i) => i.ata_id === idAta[l.ata_numero] && i.numero === l.item) || {}).id, qtd: l.qtd, periodo: l.periodo || 1 })).filter((l) => l.item_id);
           if (!linhas.length) continue;
           const id = await api.registrarPedido({ numero_oficio: num, data_oficio: g.data_oficio || null, orgao_id: org.id, oficio_solicitante: g.oficio_solicitante, origem: 'migracao', itens: linhas });
           pedidos.push({ id, numero_oficio: num, orgao_id: org.id });
@@ -246,6 +281,12 @@
         return resumo;
       },
       async publicoAtas() { return ok(await sb.rpc('publico_atas')) || []; },
+      async importacaoExistente(hash) { return ok(await sb.from('importacoes').select('*').eq('hash', hash).maybeSingle()); },
+      async registrarImportacao(r) {
+        const { data } = await sb.auth.getUser();
+        const u = data && data.user ? ok(await sb.from('usuarios').select('nome').eq('id', data.user.id).maybeSingle()) : null;
+        ok(await sb.from('importacoes').insert({ ...r, criado_por_nome: u ? u.nome : null }));
+      },
       async publicoOrgao(cnpj) { return ok(await sb.rpc('publico_orgao', { p_cnpj: cnpj })); },
       async enviarSolicitacao(p, arquivos) {
         const pasta = 'envios/' + uid() + '/';
@@ -275,5 +316,6 @@
 
   window.DADOS = CFG.SUPABASE_URL && window.supabase ? criarSupabase() : criarDemo();
   window.DADOS.agruparAdesoes = agruparAdesoes;
+  window.DADOS.grupoJaExiste = grupoJaExiste;
   window.DADOS.normalizar = R_norm;
 })();
