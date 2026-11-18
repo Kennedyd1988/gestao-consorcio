@@ -1,7 +1,8 @@
 {
-  "versao": "0.7.2",
+  "versao": "0.8.0",
   "data": "2026-11-17",
   "notas": [
+    "Reequilíbrios com linha do tempo de preços: cada item tem \"Preços e reequilíbrios\" (link \"Preços\" na lista de itens da ata), com o preço original e cada reequilíbrio a partir da data do termo aditivo. Cada adesão guarda o preço vigente na data do ofício: ofício em Word, mapa, aderentes e relatórios usam esse preço, e ofícios antigos não mudam quando o preço muda. Adesões do histórico sem data ficam marcadas para você escolher o preço da época. Reequilíbrios confirmados pelo PNCP pedem a data a partir da qual valem. Rode o script 08 na Supabase.",
     "Conferência com o PNCP: nomes escritos de forma diferente (ex.: \"Arco Verde\" e \"Arcoverde\") agora batem.",
     "Corrigir itens e quantidades de um pedido já lançado: botão na tela do pedido abre o lançamento preenchido; os limites de 50% e do dobro são conferidos de novo sem contar o pedido original. Ao gravar, o original fica no histórico como \"substituído\" (com link para o corrigido) e o novo vale com o mesmo número de ofício. Rode o script 07 na Supabase.",
     "Órgãos no PNCP × adesões autorizadas (em Atualizações do PNCP): a busca da madrugada lê a aba \"Órgãos/Entidades\" de cada ata no PNCP e o sistema mostra, por ata, as adesões autorizadas que ainda não aparecem lá como não participante (para incluir no PNCP), os órgãos que estão no PNCP sem adesão lançada aqui, e os CNPJs que faltam no cadastro, com botão para gravá-los. Pendências também aparecem nos pontos de atenção do Início. Rode o script 06 na Supabase.",

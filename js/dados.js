@@ -16,7 +16,7 @@
   function indexar(b) {
     b.config = b.config || {}; for (const k in CONFIG_PADRAO) if (b.config[k] == null) b.config[k] = CONFIG_PADRAO[k];
     b.atasPorId = {}; b.itensPorId = {}; b.orgaosPorId = {}; b.pedidosPorId = {};
-    b.periodos = b.periodos || []; b.importacoes = b.importacoes || []; b.pncpPartes = b.pncpPartes || []; b.pncp = (b.pncp || []).sort((x, y) => (y.criado_em || '').localeCompare(x.criado_em || ''));
+    b.periodos = b.periodos || []; b.importacoes = b.importacoes || []; b.pncpPartes = b.pncpPartes || []; b.precos = b.precos || []; b.pncp = (b.pncp || []).sort((x, y) => (y.criado_em || '').localeCompare(x.criado_em || ''));
     b.solicitacoes = (b.solicitacoes || []).sort((x, y) => (y.criado_em || '').localeCompare(x.criado_em || ''));
     b.atas.forEach((a) => { b.atasPorId[a.id] = a; a._qtdItens = 0; });
     b.itens.forEach((i) => { b.itensPorId[i.id] = i; if (b.atasPorId[i.ata_id]) b.atasPorId[i.ata_id]._qtdItens++; });
@@ -62,7 +62,7 @@
     const CHAVE = 'gestao-consorcio-demo-v2';
     let base;
     const salvarLocal = () => { try { localStorage.setItem(CHAVE, JSON.stringify(limpo())); } catch (e) {} };
-    const limpo = () => ({ config: base.config, atas: base.atas, itens: base.itens, orgaos: base.orgaos, pedidos: base.pedidos, pedido_itens: base.pedido_itens, solicitacoes: base.solicitacoes, periodos: base.periodos, importacoes: base.importacoes, pncp: base.pncp, pncpCfg: base.pncpCfg, pncpPartes: base.pncpPartes });
+    const limpo = () => ({ config: base.config, atas: base.atas, itens: base.itens, orgaos: base.orgaos, pedidos: base.pedidos, pedido_itens: base.pedido_itens, solicitacoes: base.solicitacoes, periodos: base.periodos, importacoes: base.importacoes, pncp: base.pncp, pncpCfg: base.pncpCfg, pncpPartes: base.pncpPartes, precos: base.precos });
     function semente() {
       const b = { config: { ...CONFIG_PADRAO }, atas: [], itens: [], orgaos: [], pedidos: [], pedido_itens: [], solicitacoes: [], periodos: [], importacoes: [], pncp: [] };
       if (window.DEMO_SEMENTE) importarLocal(b, window.DEMO_SEMENTE);
@@ -114,7 +114,7 @@
         const ped = { id: uid(), numero_oficio: p.numero_oficio || null, data_oficio: p.data_oficio, orgao_id: org.id, oficio_solicitante: p.oficio_solicitante, data_solicitante: p.data_solicitante,
           finalidade: p.finalidade, anexos_texto: p.anexos_texto, origem: p.origem || 'sistema', situacao: R.situacao(res), criado_em: new Date().toISOString(), criado_por_nome: 'Kennedy Dantas Francelino' };
         base.pedidos.push(ped);
-        res.forEach((r) => base.pedido_itens.push({ id: uid(), pedido_id: ped.id, item_id: r.item.id, qtd_solicitada: r.q, qtd_autorizada: r.decisao === 'autorizado' ? r.q : 0,
+        res.forEach((r) => base.pedido_itens.push({ id: uid(), pedido_id: ped.id, item_id: r.item.id, preco_unitario: R.precoNaData(base, r.item, p.data_oficio), qtd_solicitada: r.q, qtd_autorizada: r.decisao === 'autorizado' ? r.q : 0,
           decisao: r.decisao, motivo: r.motivo || null, usado_orgao_antes: r.usadoOrgao ?? r.org, usado_total_antes: r.usadoTotal ?? r.tot, periodo_id: r.periodo_id || null }));
         salvarLocal(); indexar(base); return ped.id;
       },
@@ -162,6 +162,38 @@
       async urlArquivo() { return null; },
       async emailsDoPedido(id) { return (base.emails || []).filter((x) => x.pedido_id === id).sort((x, y) => y.criado_em.localeCompare(x.criado_em)); },
       async enviarEmail() { throw new Error('Na prévia o e-mail não é enviado. Na versão publicada ele sai pelo servidor de e-mail do sistema.'); },
+      // ---- preços e reequilíbrios (prévia)
+      async registrarReequilibrio(itemId, preco, desde, instrumento, obs) {
+        base.precos = base.precos || [];
+        const it = base.itens.find((x) => x.id === itemId);
+        if (!base.precos.some((p) => p.item_id === itemId) && it.preco_unitario != null) {
+          const a = base.atas.find((x) => x.id === it.ata_id);
+          base.precos.push({ id: uid(), item_id: itemId, preco: Number(it.preco_unitario), vigente_desde: a.data_assinatura || '2000-01-01', instrumento: 'Preço registrado na ata' });
+        }
+        const ex = base.precos.find((p) => p.item_id === itemId && p.vigente_desde === desde);
+        if (ex) Object.assign(ex, { preco: Number(preco), instrumento, observacoes: obs || null });
+        else base.precos.push({ id: uid(), item_id: itemId, preco: Number(preco), vigente_desde: desde, instrumento, observacoes: obs || null, criado_por_nome: 'Kennedy Dantas Francelino' });
+        it.preco_unitario = R.precoNaData(base, it, new Date().toISOString().slice(0, 10));
+        salvarLocal(); indexar(base);
+      },
+      async excluirPreco(id) {
+        const p = base.precos.find((x) => x.id === id); if (!p) return;
+        const ps = base.precos.filter((x) => x.item_id === p.item_id).sort((x, y) => x.vigente_desde.localeCompare(y.vigente_desde));
+        if (ps[0].id === id) throw new Error('O preço original não pode ser excluído; corrija o valor.');
+        base.precos = base.precos.filter((x) => x.id !== id);
+        const it = base.itens.find((x) => x.id === p.item_id); it.preco_unitario = R.precoNaData(base, it, new Date().toISOString().slice(0, 10));
+        salvarLocal(); indexar(base);
+      },
+      async definirPrecoAdesao(piId, preco) { const pi = base.pedido_itens.find((x) => x.id === piId); pi.preco_unitario = Number(preco); pi.preco_conferir = false; salvarLocal(); },
+      async recalcularPrecosItem(itemId) {
+        const it = base.itens.find((x) => x.id === itemId), varios = base.precos.filter((p) => p.item_id === itemId).length > 1; let n = 0;
+        for (const pi of base.pedido_itens.filter((x) => x.item_id === itemId)) {
+          const ped = base.pedidos.find((x) => x.id === pi.pedido_id);
+          if (ped.data_oficio || !varios) pi.preco_unitario = R.precoNaData(base, it, ped.data_oficio);
+          pi.preco_conferir = !ped.data_oficio && varios; n++;
+        }
+        salvarLocal(); indexar(base); return n;
+      },
       // ---- PNCP (na prévia: exemplos fixos; confirmar aplica só neste navegador)
       async pncpConfig() { return base.pncpCfg || {}; },
       async buscarPncp() { throw new Error('Na prévia a busca no PNCP não roda. Na versão publicada ela roda sozinha toda madrugada e pelo botão "Buscar agora".'); },
@@ -182,7 +214,7 @@
           base.periodos.push({ id: uid(), ata_id: a.ata_id, numero: Math.max(...ps.map((x) => x.numero)) + 1, inicio: d.inicio, fim: d.fim, renova_quantitativos: !!d.renova, instrumento: d.instrumento });
           sincronizarVigencia(base, a.ata_id);
         } else if (a.tipo === 'reequilibrio') {
-          for (const n of d.itens) { const it = base.itens.find((x) => x.ata_id === a.ata_id && x.numero === Number(n.numero)); if (!it) throw new Error('Item ' + n.numero + ' não existe na ARP ' + a.ata_numero + '.'); it.preco_unitario = Number(n.preco_novo); }
+          for (const n of d.itens) { const it = base.itens.find((x) => x.ata_id === a.ata_id && x.numero === Number(n.numero)); if (!it) throw new Error('Item ' + n.numero + ' não existe na ARP ' + a.ata_numero + '.'); await api.registrarReequilibrio(it.id, n.preco_novo, d.desde || new Date().toISOString().slice(0, 10), d.instrumento); }
         } else if (a.tipo === 'cancelamento') { const at = base.atas.find((x) => x.id === a.ata_id); if (at) at.ativo = false; }
         Object.assign(a, { situacao: 'confirmada', dados: d, decidido_por_nome: 'Kennedy Dantas Francelino', decidido_em: new Date().toISOString() });
         salvarLocal(); indexar(base);
@@ -302,13 +334,14 @@
       async esqueci(email) { ok(await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })); },
       async trocarSenha(nova) { ok(await sb.auth.updateUser({ password: nova })); const { data } = await sb.auth.getUser(); await sb.from('usuarios').update({ troca_senha: false }).eq('id', data.user.id); },
       async carregar() {
-        const [config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes, periodos, pncp, partes] = await Promise.all([
+        const [config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes, periodos, pncp, partes, precos] = await Promise.all([
           sb.from('configuracoes').select('*').eq('id', 1).single().then(ok), tudo('atas'), tudo('itens'), tudo('orgaos'), tudo('pedidos'), tudo('pedido_itens'),
           tudo('solicitacoes', 'criado_em').catch(() => []),   // sem o script 02: lista vazia
           tudo('periodos').catch(() => []),                      // sem o script 03: sem períodos
           tudo('pncp_atualizacoes', 'criado_em').catch(() => null),  // sem o script 04: null
-          tudo('pncp_partes', 'ata_id').catch(() => null)]);         // sem o script 06: null
-        return indexar({ config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes, periodos, pncp: pncp || [], pncpAtivo: pncp !== null, pncpPartes: partes || [], partesAtivo: partes !== null });
+          tudo('pncp_partes', 'ata_id').catch(() => null),           // sem o script 06: null
+          tudo('precos', 'vigente_desde').catch(() => null)]);       // sem o script 08: null
+        return indexar({ config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes, periodos, pncp: pncp || [], pncpAtivo: pncp !== null, pncpPartes: partes || [], partesAtivo: partes !== null, precos: precos || [], precosAtivo: precos !== null });
       },
       async salvar(tabela, reg) {
         const { id, ...resto } = Object.fromEntries(Object.entries(reg).filter(([k]) => !k.startsWith('_')));
@@ -379,6 +412,10 @@
       async consultarSolicitacao(protocolo, cnpj) { return ok(await sb.rpc('consultar_solicitacao', { p_protocolo: protocolo, p_cnpj: cnpj })); },
       async atualizarSolicitacao(id, campos) { ok(await sb.from('solicitacoes').update({ ...campos, atualizado_em: new Date().toISOString() }).eq('id', id)); },
       async urlArquivo(caminho) { const { data } = await sb.storage.from('consorcio-solicitacoes').createSignedUrl(caminho, 600); return data && data.signedUrl; },
+      async registrarReequilibrio(itemId, preco, desde, instrumento, obs) { ok(await sb.rpc('registrar_reequilibrio', { p_item: itemId, p_preco: preco, p_desde: desde, p_instrumento: instrumento || null, p_obs: obs || null })); },
+      async excluirPreco(id) { ok(await sb.rpc('excluir_preco', { p_id: id })); },
+      async definirPrecoAdesao(piId, preco) { ok(await sb.rpc('definir_preco_adesao', { p_pedido_item: piId, p_preco: preco })); },
+      async recalcularPrecosItem(itemId) { return ok(await sb.rpc('recalcular_precos_item', { p_item: itemId })); },
       async emailsDoPedido(id) { try { return ok(await sb.from('emails').select('*').eq('pedido_id', id).order('criado_em', { ascending: false })); } catch (e) { return []; } },
       async enviarEmail(msg) {
         const { data, error } = await sb.functions.invoke('consorcio-enviar-email', { body: msg });

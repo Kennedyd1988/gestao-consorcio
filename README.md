@@ -30,6 +30,7 @@ Segue o manual de padrões SOFT+ (mesmo visual e componentes do painel do Portal
 | `supabase/functions/consorcio-pncp` | Edge Function que busca as atas e os termos aditivos no PNCP (agenda diária às 04h, horário de Brasília) |
 | `supabase/functions/consorcio-enviar-email` | Edge Function que envia o e-mail de resposta (SMTP do projeto: SMTP_HOST, SMTP_PORT, SMTP_USUARIO, SMTP_SENHA, SMTP_REMETENTE; opcional CONSORCIO_SMTP_REMETENTE) |
 | `supabase/05_email_documentos.sql` | Links dos documentos, link do processo por ata, telefone do órgão e registro dos e-mails |
+| `supabase/08_precos_reequilibrio.sql` | Linha do tempo de preços (reequilíbrios) e preço congelado em cada adesão |
 | `supabase/07_corrigir_pedido.sql` | Correção de itens e quantidades de pedido lançado (substitui mantendo o número) |
 | `supabase/06_pncp_orgaos.sql` | Órgãos/entidades de cada ata no PNCP (conferência com as adesões autorizadas) |
 | `supabase/04_pncp.sql` | Tabelas das atualizações do PNCP, confirmação e agenda diária (pg_cron) |

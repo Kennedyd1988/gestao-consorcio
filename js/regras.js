@@ -53,7 +53,7 @@
       const item = base.itensPorId[l.item_id];
       const ata = item && base.atasPorId[item.ata_id];
       const q = r4(l.qtd);
-      const res = { item, ata, q, decisao: 'autorizado', motivo: '', alertas: [] };
+      const res = { item, ata, q, decisao: 'autorizado', motivo: '', alertas: [], preco: R.precoNaData(base, item, dataOficio) };
       if (!item) { res.decisao = 'invalido'; res.motivo = 'Item não encontrado.'; return res; }
       const temPeriodos = periodosDa(base, item.ata_id).length > 0;
       const per = temPeriodos ? R.periodoNaData(base, item.ata_id, dataOficio) : null;
@@ -127,6 +127,18 @@
     return out;
   };
 
+  // Preço do item numa data, pela linha do tempo de reequilíbrios (sem linha do tempo: o preço do item)
+  R.precoNaData = function (base, item, data) {
+    if (!item) return null;
+    const ps = (base.precos || []).filter((p) => p.item_id === item.id).sort((x, y) => x.vigente_desde.localeCompare(y.vigente_desde));
+    if (!ps.length) return item.preco_unitario != null && item.preco_unitario !== '' ? Number(item.preco_unitario) : null;
+    const d = data || new Date().toISOString().slice(0, 10);
+    let v = ps[0];
+    for (const p of ps) if (p.vigente_desde <= d) v = p;
+    return Number(v.preco);
+  };
+  // Preço de um item de pedido: o congelado na adesão; sem ele, o do item
+  R.precoPi = (base, pi, item) => (pi && pi.preco_unitario != null ? Number(pi.preco_unitario) : item && item.preco_unitario != null && item.preco_unitario !== '' ? Number(item.preco_unitario) : null);
   R.dataBR = (d) => (d ? d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(0, 4) : '');
   R.num = (n, casas) => (n == null || n === '' ? '' : Number(n).toLocaleString('pt-BR', { minimumFractionDigits: casas ?? 0, maximumFractionDigits: casas ?? 4 }));
   R.moeda = (n) => (n == null || n === '' ? '' : Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));

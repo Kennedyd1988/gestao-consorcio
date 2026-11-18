@@ -215,20 +215,21 @@
   const cicloVer = (ataId) => (estado.ciclos[ataId] !== undefined ? estado.ciclos[ataId] : R.cicloAtual(estado.base, ataId));
   const noCiclo = (pi, ataId) => { const c = cicloVer(ataId); return !c || R.cicloDe(estado.base, pi.periodo_id, ataId) === c; };
   function consumo(itemId, ignorar) {
-    const b = estado.base; let tot = 0; const porOrg = {};
+    const b = estado.base; let tot = 0, valor = 0; const porOrg = {}, valorPorOrg = {};
     const ataId = (b.itensPorId[itemId] || {}).ata_id;
     for (const pi of b.pedido_itens) {
       if (pi.item_id !== itemId || pi.decisao !== 'autorizado') continue;
       const p = b.pedidosPorId[pi.pedido_id]; if (!p || p.situacao === 'cancelado' || p.id === ignorar) continue;
       if (!noCiclo(pi, ataId)) continue;
       tot += Number(pi.qtd_autorizada); porOrg[p.orgao_id] = (porOrg[p.orgao_id] || 0) + Number(pi.qtd_autorizada);
+      const pr = R.precoPi(b, pi, b.itensPorId[itemId]); if (pr != null) { valor += Number(pi.qtd_autorizada) * pr; valorPorOrg[p.orgao_id] = (valorPorOrg[p.orgao_id] || 0) + Number(pi.qtd_autorizada) * pr; }
     }
-    return { tot, porOrg };
+    return { tot, porOrg, valor, valorPorOrg };
   }
   function resumoAta(a) {
     const itens = estado.base.itens.filter((i) => i.ata_id === a.id);
     let maior = 0, valor = 0;
-    for (const i of itens) { const c = consumo(i.id).tot; maior = Math.max(maior, c / (2 * i.qtd_registrada) * 100); if (i.preco_unitario != null) valor += c * i.preco_unitario; }
+    for (const i of itens) { const cc = consumo(i.id), c = cc.tot; maior = Math.max(maior, c / (2 * i.qtd_registrada) * 100); valor += cc.valor; }
     const peds = new Set(estado.base.pedido_itens.filter((pi) => itens.some((i) => i.id === pi.item_id) && pi.decisao === 'autorizado').map((pi) => pi.pedido_id));
     const ativos = [...peds].filter((id) => estado.base.pedidosPorId[id] && estado.base.pedidosPorId[id].situacao !== 'cancelado');
     return { itens, maior, valor, adesoes: ativos.length };
@@ -238,11 +239,11 @@
     return b.pedido_itens.filter((pi) => pi.pedido_id === p.id).map((pi) => {
       const item = b.itensPorId[pi.item_id], ata = b.atasPorId[item.ata_id], reg = Number(item.qtd_registrada);
       const uo = pi.usado_orgao_antes != null ? Number(pi.usado_orgao_antes) : null, ut = pi.usado_total_antes != null ? Number(pi.usado_total_antes) : null;
-      return { pi, item, ata, decisao: pi.decisao, motivo: pi.motivo || '', q: Number(pi.qtd_solicitada), qAut: Number(pi.qtd_autorizada),
+      return { pi, item, ata, preco: R.precoPi(b, pi, item), decisao: pi.decisao, motivo: pi.motivo || '', q: Number(pi.qtd_solicitada), qAut: Number(pi.qtd_autorizada),
         usadoOrgao: uo ?? 0, dispOrgao: Math.max(0, reg * 0.5 - (uo ?? 0)), dispTotal: Math.max(0, reg * 2 - (ut ?? 0)) };
     }).sort((x, y) => x.ata.numero.localeCompare(y.ata.numero) || x.item.numero - y.item.numero);
   }
-  const valorPedido = (p) => linhasDoPedido(p).reduce((s, l) => s + (l.decisao === 'autorizado' && l.item.preco_unitario != null ? l.qAut * l.item.preco_unitario : 0), 0);
+  const valorPedido = (p) => linhasDoPedido(p).reduce((s, l) => s + (l.decisao === 'autorizado' && l.preco != null ? l.qAut * l.preco : 0), 0);
   const textoAnexos = (pregoes) => {
     const t = estado.base.config.texto_anexos || '';
     const p = pregoes.length > 1 ? 'dos Pregões Eletrônicos ' + pregoes.map((x) => 'nº ' + x).join(' e ') : 'Pregão Eletrônico nº ' + (pregoes[0] || '___');
@@ -346,6 +347,7 @@
     try { tela(c, id); } catch (e) { console.error(e); rc(c, el('h1', null, 'Algo deu errado'), el('p', { class: 'msg msg-erro' }, e.message)); }
     paginarTudo(c);
     c.focus({ preventScroll: true }); window.scrollTo(0, 0);
+    if (estado.irPrecos) { estado.irPrecos = false; const alvo = document.getElementById('precos-item'); if (alvo) alvo.scrollIntoView(); }
   }
   // Formulário público (#solicitar) e consulta (#consultar) abrem sem login
   const ehPublica = () => /^#(solicitar|consultar)/.test(location.hash);
@@ -551,10 +553,10 @@
         const tr = grupos.querySelector('tr[data-linha="' + x.item.id + '"]'); if (!tr) return;
         const cel = tr.querySelector('[data-col=res]');
         if (x.decisao === 'autorizado') {
-          aut++; if (x.item.preco_unitario != null) valor += x.q * x.item.preco_unitario;
+          aut++; if (x.preco != null) valor += x.q * x.preco;
           tr.className = 'lin-autorizado';
           cel.className = 'resultado ok';
-          rc(cel, el('strong', null, '✓ Autorizado'), x.item.preco_unitario != null ? 'R$ ' + R.moeda(x.q * x.item.preco_unitario) : null, x.alertas.map((t) => el('span', { class: 'alerta' }, t)));
+          rc(cel, el('strong', null, '✓ Autorizado'), x.preco != null ? 'R$ ' + R.moeda(x.q * x.preco) : null, x.alertas.map((t) => el('span', { class: 'alerta' }, t)));
         } else if (x.decisao === 'negado') {
           neg++; tr.className = 'lin-negado'; cel.className = 'resultado nao';
           rc(cel, el('strong', null, '✕ Negado'), x.motivo, el('span', { class: 'alerta' }, 'Disponível para este órgão: ' + R.num(x.disponivel, 2)));
@@ -788,8 +790,9 @@
       el('section', { class: 'cartao' }, el('h2', null, 'Itens'),
         tabela(['ARP', 'Item', 'Descrição', 'Und.', 'Qtd solicitada', 'Qtd autorizada', 'Preço unit. (R$)', 'Valor (R$)', 'Decisão'], ls.map((l) => el('tr', { class: 'lin-' + l.decisao },
           el('td', null, l.ata.numero), el('td', { class: 'num' }, l.item.numero), el('td', { class: 'desc' }, l.item.descricao), el('td', null, l.item.unidade || ''),
-          el('td', { class: 'num' }, R.num(l.q, 2)), el('td', { class: 'num' }, R.num(l.qAut, 2)), el('td', { class: 'num' }, R.moeda(l.item.preco_unitario)),
-          el('td', { class: 'num' }, l.item.preco_unitario != null ? R.moeda(l.qAut * l.item.preco_unitario) : '—'),
+          el('td', { class: 'num' }, R.num(l.q, 2)), el('td', { class: 'num' }, R.num(l.qAut, 2)),
+          el('td', { class: 'num' }, l.preco != null ? R.moeda(l.preco) : '—', l.pi.preco_conferir ? el('span', { class: 'sub-linha ajuda-erro', title: 'Ofício sem data: confira o preço da época na tela do item (Preços e reequilíbrios).' }, 'conferir preço') : null),
+          el('td', { class: 'num' }, l.preco != null ? R.moeda(l.qAut * l.preco) : '—'),
           el('td', { class: 'resultado ' + (l.decisao === 'autorizado' ? 'ok' : 'nao') }, el('strong', null, l.decisao === 'autorizado' ? '✓ Autorizado' : '✕ Negado'), l.motivo)))),
         el('p', { class: 'ajuda mt-05' }, 'Valor autorizado: R$ ' + R.moeda(valorPedido(p)))),
       p.origem !== 'migracao' ? cartaoEmails(p) : null);
@@ -866,7 +869,7 @@
         el('td', { class: 'num' }, i.preco_unitario != null ? R.moeda(i.preco_unitario) : el('span', { class: 'falta-leve' }, 'falta')), el('td', { class: 'num' }, R.num(i.qtd_registrada * 0.5, 2)),
         el('td', { class: 'num' }, R.num(i.qtd_registrada * 2, 2)), el('td', { class: 'num' }, R.num(cons.tot, 2)), el('td', { class: 'num' + (saldo <= 0 ? ' saldo-zero' : '') }, R.num(saldo, 2)),
         el('td', null, barraUso(cons.tot / (2 * i.qtd_registrada) * 100)),
-        el('td', { class: 'acoes' }, el('a', { class: 'link', href: '#item-' + i.id }, 'Aderentes'), podeEditar() ? el('button', { type: 'button', class: 'link ml-1', onclick: () => formItem(a, i) }, 'Editar') : null));
+        el('td', { class: 'acoes' }, el('a', { class: 'link', href: '#item-' + i.id }, 'Aderentes'), el('a', { class: 'link ml-1', href: '#item-' + i.id, onclick: () => { estado.irPrecos = true; } }, 'Preços'), podeEditar() ? el('button', { type: 'button', class: 'link ml-1', onclick: () => formItem(a, i) }, 'Editar') : null));
     }), { 'data-sem-paginas': '1' });
     const abaMapa = () => mapaAdesoes(a, itens);
     const abaDados = () => el('dl', { class: 'dados' },
@@ -981,12 +984,12 @@
     const usado = i.id ? consumo(i.id).tot : 0;
     const f = { numero: el('input', { type: 'number', min: '1', value: i.numero ?? (Math.max(0, ...estado.base.itens.filter((x) => x.ata_id === a.id).map((x) => x.numero)) + 1) }),
       descricao: area(i.descricao, { rows: 2 }), unidade: txt(i.unidade, { maxlength: 20 }), qtd: el('input', { type: 'number', min: '0', step: 'any', value: i.qtd_registrada ?? '' }),
-      preco: el('input', { type: 'number', min: '0', step: 'any', value: i.preco_unitario ?? '' }) };
+      preco: el('input', { type: 'number', min: '0', step: 'any', value: i.preco_unitario ?? '', disabled: i.id && (estado.base.precos || []).some((p) => p.item_id === i.id) ? true : null }) };
     const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar');
     const d = abrirDialogo((i.id ? 'Editar item ' + i.numero : 'Novo item') + ' · ARP ' + a.numero, el('div', null,
       el('div', { class: 'grade-campos' }, campo('fi-num', 'Nº do item', f.numero, null, true), campo('fi-und', 'Unidade', f.unidade)),
       campo('fi-desc', 'Descrição', f.descricao, null, true),
-      el('div', { class: 'grade-campos' }, campo('fi-qtd', 'Quantidade registrada', f.qtd, 'Gerenciador + participantes. Os limites saem daqui.', true), campo('fi-preco', 'Preço unitário (R$)', f.preco)),
+      el('div', { class: 'grade-campos' }, campo('fi-qtd', 'Quantidade registrada', f.qtd, 'Gerenciador + participantes. Os limites saem daqui.', true), campo('fi-preco', 'Preço unitário (R$)', f.preco, f.preco.disabled ? 'Este item tem reequilíbrios: o preço muda em Preços e reequilíbrios, na tela do item.' : 'Para reequilíbrio, use "Preços" na lista de itens: assim o preço antigo fica guardado.')),
       usado ? el('p', { class: 'msg msg-falta' }, 'Este item já tem ' + R.num(usado, 2) + ' aderidos. Mudar a quantidade registrada muda os limites de todos os órgãos.') : null),
       [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), btn]);
     btn.addEventListener('click', async () => {
@@ -1014,7 +1017,11 @@
     const peds = b.pedidos.filter((p) => p.situacao !== 'cancelado' && b.pedido_itens.some((pi) => pi.pedido_id === p.id && pi.decisao === 'autorizado' && noCiclo(pi, a.id) && itens.some((i) => i.id === pi.item_id)))
       .sort((x, y) => ordOficio(x) - ordOficio(y));
     const qtd = {}; // qtd[pedidoId][itemId]
-    for (const pi of b.pedido_itens) if (pi.decisao === 'autorizado' && noCiclo(pi, a.id) && peds.some((p) => p.id === pi.pedido_id)) { (qtd[pi.pedido_id] = qtd[pi.pedido_id] || {})[pi.item_id] = (qtd[pi.pedido_id][pi.item_id] || 0) + Number(pi.qtd_autorizada); }
+    const val = {}; // val[pedidoId][itemId] = quantidade × preço da época
+    for (const pi of b.pedido_itens) if (pi.decisao === 'autorizado' && noCiclo(pi, a.id) && peds.some((p) => p.id === pi.pedido_id)) {
+      (qtd[pi.pedido_id] = qtd[pi.pedido_id] || {})[pi.item_id] = (qtd[pi.pedido_id][pi.item_id] || 0) + Number(pi.qtd_autorizada);
+      const pr = R.precoPi(b, pi, b.itensPorId[pi.item_id]); if (pr != null) (val[pi.pedido_id] = val[pi.pedido_id] || {})[pi.item_id] = (val[pi.pedido_id][pi.item_id] || 0) + Number(pi.qtd_autorizada) * pr;
+    }
     function desenhar() {
       // Colunas: um órgão (somando seus ofícios) ou um ofício
       let colunas;
@@ -1029,7 +1036,7 @@
       const t = normalizar(est.busca);
       const linhas = itens.filter((i) => (!est.soComAdesao || consumo(i.id).tot > 0) && (!t || normalizar(i.numero + ' ' + i.descricao).includes(t)));
       // Valor autorizado por coluna (órgão ou ofício)
-      const valCol = colunas.map((col) => itens.reduce((s, i) => s + (i.preco_unitario != null ? col.peds.reduce((t, p) => t + ((qtd[p.id] || {})[i.id] || 0), 0) * i.preco_unitario : 0), 0));
+      const valCol = colunas.map((col) => itens.reduce((s, i) => s + col.peds.reduce((t, p) => t + ((val[p.id] || {})[i.id] || 0), 0), 0));
       const cartoes = linhas.map((i) => {
         const cons = consumo(i.id), lim = i.qtd_registrada * 0.5, dobro = 2 * i.qtd_registrada, uso = cons.tot / dobro * 100;
         const un = i.unidade || '';
@@ -1089,6 +1096,61 @@
 
 
 
+
+  // ---------------------------------------------------------------- preços e reequilíbrios do item
+  function secaoPrecosItem(i, a) {
+    const b = estado.base;
+    if (b.precosAtivo === false) return el('section', { class: 'cartao', id: 'precos-item' }, el('h2', null, 'Preços e reequilíbrios'), el('p', { class: 'msg msg-falta' }, 'Rode o script 08_precos_reequilibrio.sql na Supabase para liberar a linha do tempo de preços.'));
+    const ps = (b.precos || []).filter((p) => p.item_id === i.id).sort((x, y) => x.vigente_desde.localeCompare(y.vigente_desde));
+    const linhaTempo = ps.length ? ps : (i.preco_unitario != null ? [{ id: null, preco: i.preco_unitario, vigente_desde: a.data_assinatura || '', instrumento: 'Preço registrado na ata' }] : []);
+    const adesoes = b.pedido_itens.filter((pi) => pi.item_id === i.id && pi.decisao === 'autorizado' && b.pedidosPorId[pi.pedido_id] && b.pedidosPorId[pi.pedido_id].situacao !== 'cancelado')
+      .map((pi) => ({ pi, p: b.pedidosPorId[pi.pedido_id] })).sort((x, y) => (x.p.data_oficio || '9').localeCompare(y.p.data_oficio || '9') || ordOficio(x.p) - ordOficio(y.p));
+    const conferir = adesoes.filter((x) => x.pi.preco_conferir).length;
+    const precosDistintos = [...new Set(linhaTempo.map((p) => Number(p.preco)))];
+    const f = { preco: el('input', { type: 'number', min: '0', step: '0.01', placeholder: '0,00' }), desde: el('input', { type: 'date', value: hoje() }), ins: txt('', { placeholder: '1º Termo Aditivo' }) };
+    const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Registrar reequilíbrio');
+    btn.addEventListener('click', async () => {
+      const v = Number(f.preco.value);
+      if (!marcarErro(f.preco, v > 0 ? '' : 'Informe o novo preço.')) return;
+      if (!marcarErro(f.desde, f.desde.value ? '' : 'Informe a data.')) return;
+      ocupado(btn, 'Gravando…');
+      try {
+        await D.registrarReequilibrio(i.id, v, f.desde.value, f.ins.value.trim() || 'Termo aditivo');
+        await recarregar(); rotear(); toast('Reequilíbrio registrado. Os ofícios já emitidos continuam com o preço da época.');
+      } catch (e) { ocupado(btn); toast(e.message, true); }
+    });
+    const recalcular = podeEditar() && ps.length > 1 ? el('button', { type: 'button', class: 'btn btn-claro', onclick: async (ev) => {
+      if (!await confirmar('Recalcular o preço das adesões', 'Cada adesão deste item recebe o preço vigente na data do seu ofício, conforme a linha do tempo. As adesões sem data (histórico da planilha) ficam marcadas para você escolher o preço.', 'Recalcular')) return;
+      const bt = ev.target; ocupado(bt, 'Recalculando…');
+      try { await D.recalcularPrecosItem(i.id); await recarregar(); rotear(); toast('Preços das adesões recalculados.'); } catch (e) { ocupado(bt); toast(e.message, true); }
+    } }, 'Recalcular o preço das adesões pela data do ofício') : null;
+    return el('section', { class: 'cartao', id: 'precos-item' }, el('h2', null, 'Preços e reequilíbrios'),
+      el('p', { class: 'ajuda' }, 'Cada adesão guarda o preço vigente na data do ofício. Um reequilíbrio vale a partir da data informada: as adesões anteriores mantêm o preço da época e as novas já saem com o preço novo.'),
+      tabela(['Vale a partir de', 'Preço unitário (R$)', 'Variação', 'Instrumento', ''], linhaTempo.map((p, k) => {
+        const ant = k ? Number(linhaTempo[k - 1].preco) : null;
+        return el('tr', null, el('td', null, R.dataBR(p.vigente_desde) || '—'), el('td', { class: 'num' }, el('strong', null, R.moeda(p.preco))),
+          el('td', { class: 'num' }, ant ? (Number(p.preco) >= ant ? '+' : '') + R.num((Number(p.preco) / ant - 1) * 100, 2) + '%' : '—'), el('td', null, p.instrumento || '—'),
+          el('td', { class: 'acoes' }, podeEditar() && p.id && k > 0 ? el('button', { type: 'button', class: 'link btn-texto-perigo', onclick: async () => {
+            if (!await confirmar('Excluir reequilíbrio', 'Exclui o preço de ' + R.moeda(p.preco) + ' a partir de ' + R.dataBR(p.vigente_desde) + '. As adesões já lançadas não mudam.', 'Excluir', true)) return;
+            try { await D.excluirPreco(p.id); await recarregar(); rotear(); toast('Reequilíbrio excluído.'); } catch (e) { toast(e.message, true); }
+          } }, 'Excluir') : null));
+      })),
+      podeEditar() ? el('div', { class: 'secao-form' }, el('h3', null, 'Registrar reequilíbrio'),
+        el('div', { class: 'grade-campos' }, campo('pr-preco', 'Novo preço unitário (R$)', f.preco, null, true), campo('pr-desde', 'Vale a partir de', f.desde, 'Data de assinatura ou de efeito do termo aditivo.', true), campo('pr-ins', 'Instrumento', f.ins)),
+        el('div', { class: 'botoes-form' }, btn, recalcular)) : null,
+      adesoes.length ? el('div', { class: 'mt-1' }, el('h3', null, 'Preço de cada adesão'),
+        conferir ? el('p', { class: 'msg msg-falta' }, conferir + ' adesão(ões) sem data de ofício: escolha o preço que valia quando foram autorizadas.') : null,
+        tabela(['Ofício', 'Data', 'Órgão', 'Quantidade', 'Preço da adesão (R$)', 'Valor (R$)'], adesoes.map(({ pi, p }) => {
+          const o = b.orgaosPorId[p.orgao_id], pr = R.precoPi(b, pi, i);
+          const escolha = podeEditar() && precosDistintos.length > 1 ? sel(precosDistintos.map((v) => [v, R.moeda(v)]).concat(precosDistintos.includes(Number(pr)) ? [] : [[pr, R.moeda(pr)]]), pr) : null;
+          if (escolha) escolha.addEventListener('change', async () => { try { await D.definirPrecoAdesao(pi.id, Number(escolha.value)); await recarregar(); rotear(); toast('Preço da adesão atualizado.'); } catch (e) { toast(e.message, true); } });
+          return el('tr', { class: pi.preco_conferir ? 'lin-negado' : null }, el('td', null, el('a', { href: '#pedido-' + p.id }, p.numero_oficio || 's/n')), el('td', null, R.dataBR(p.data_oficio) || (p.origem === 'migracao' ? 'sem data (planilha)' : '—')),
+            el('td', null, o ? o.nome : '—'), el('td', { class: 'num' }, R.num(pi.qtd_autorizada, 2)),
+            el('td', { class: 'num' }, escolha || (pr != null ? R.moeda(pr) : '—'), pi.preco_conferir ? el('span', { class: 'sub-linha ajuda-erro' }, 'conferir') : null),
+            el('td', { class: 'num' }, pr != null ? R.moeda(Number(pi.qtd_autorizada) * pr) : '—'));
+        }), { 'data-sem-paginas': '1' })) : null);
+  }
+
   // ================================================================= ITEM: órgãos que aderiram
   TELAS.item = (c, id) => {
     const b = estado.base, i = b.itensPorId[id];
@@ -1110,7 +1172,7 @@
       const linhas = [['ARP ' + a.numero + ' · Item ' + i.numero + ' – ' + i.descricao], ['Registrado', reg, 'Limite por órgão (50%)', lim, 'Limite total (dobro)', reg * 2, 'Aderido', cons.tot], [],
         ['Órgão', 'CNPJ', 'UF', 'Ofícios do CIMOP', 'Quantidade', '% do limite de 50%', 'Saldo do órgão', 'Valor (R$)']];
       grupos.forEach((g) => linhas.push([g.o.nome, O.formatarCnpj(g.o.cnpj || ''), g.o.uf || '', g.peds.map((l) => (l.p.numero_oficio || 's/n') + (l.p.data_oficio ? ' (' + R.dataBR(l.p.data_oficio) + ')' : '')).join('; '),
-        g.qtd, Math.round(g.qtd / lim * 1000) / 10, Math.max(0, lim - g.qtd), vu != null ? g.qtd * vu : null]));
+        g.qtd, Math.round(g.qtd / lim * 1000) / 10, Math.max(0, lim - g.qtd), cons.valorPorOrg[g.o.id] != null ? Math.round(cons.valorPorOrg[g.o.id] * 100) / 100 : null]));
       const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(linhas), 'Aderentes');
       baixar('Aderentes - ARP ' + a.numero.replace('/', '-') + ' item ' + i.numero + '.xlsx', XLSX.write(wb, { type: 'array', bookType: 'xlsx' }), XLSX_T);
     };
@@ -1133,9 +1195,10 @@
             el('td', { class: 'num' }, R.num(g.qtd, 2)),
             el('td', null, barraUso(g.qtd / lim * 100), g.qtd > lim + 1e-9 ? el('span', { class: 'sub-linha ajuda-erro' }, 'acima do limite de 50%') : null),
             el('td', { class: 'num' + (lim - g.qtd <= 0 ? ' saldo-zero' : '') }, R.num(Math.max(0, lim - g.qtd), 2)),
-            el('td', { class: 'num' }, vu != null ? R.moeda(g.qtd * vu) : '—')))),
+            el('td', { class: 'num' }, cons.valorPorOrg[g.o.id] != null ? R.moeda(cons.valorPorOrg[g.o.id]) : '—')))),
           el('tfoot', null, el('tr', null, el('th', { scope: 'row' }, 'Total'), el('td', null), el('td', { class: 'num' }, R.num(cons.tot, 2)), el('td', null), el('td', null),
-            el('td', { class: 'num' }, vu != null ? R.moeda(cons.tot * vu) : '—'))))) : el('p', { class: 'vazio' }, 'Nenhum órgão aderiu a este item ainda.')),
+            el('td', { class: 'num' }, R.moeda(cons.valor)))))) : el('p', { class: 'vazio' }, 'Nenhum órgão aderiu a este item ainda.')),
+      secaoPrecosItem(i, a),
       neg.length ? el('section', { class: 'cartao' }, el('h2', null, 'Pedidos negados neste item'),
         tabela(['Órgão', 'Ofício', 'Qtd pedida', 'Motivo'], neg.map((l) => el('tr', null, el('td', null, l.o.nome), el('td', null, el('a', { href: '#pedido-' + l.p.id }, l.p.numero_oficio || 's/n')),
           el('td', { class: 'num' }, R.num(l.pi.qtd_solicitada, 2)), el('td', null, l.pi.motivo || ''))))) : null);
@@ -1161,13 +1224,13 @@
         const linhas = itens.map((i) => {
           const c = consumo(i.id), reg = Number(i.qtd_registrada), dobro = 2 * reg, uso = reg ? c.tot / dobro * 100 : 0;
           maior = Math.max(maior, uso);
-          if (i.preco_unitario != null) valor += c.tot * i.preco_unitario;
+          valor += c.valor;
           return { numero: i.numero, descricao: i.descricao, unidade: i.unidade || '', registrado: reg, dobro, aderido: c.tot, saldo: Math.max(0, dobro - c.tot), uso };
         }).filter((l) => opc.todosItens || l.aderido > 0);
         for (const pi of b.pedido_itens) {
           const it = b.itensPorId[pi.item_id]; if (!it || it.ata_id !== a.id || pi.decisao !== 'autorizado' || !noCiclo(pi, a.id)) continue;
           const p = b.pedidosPorId[pi.pedido_id]; if (!p || p.situacao === 'cancelado') continue;
-          const v = it.preco_unitario != null ? Number(pi.qtd_autorizada) * it.preco_unitario : 0;
+          const pr = R.precoPi(b, pi, it), v = pr != null ? Number(pi.qtd_autorizada) * pr : 0;
           const o = porOrg.get(p.orgao_id) || { nome: b.orgaosPorId[p.orgao_id].nome, oficios: new Set(), valor: 0 }; o.oficios.add(p.numero_oficio || 's/n'); o.valor += v; porOrg.set(p.orgao_id, o);
           const g = orgaos.get(p.orgao_id) || { org: b.orgaosPorId[p.orgao_id], pedidos: new Set(), atas: new Set(), valor: 0 };
           g.pedidos.add(p.id); g.atas.add(a.numero); g.valor += v; orgaos.set(p.orgao_id, g); pedidosSet.add(p.id);
@@ -1226,7 +1289,7 @@
         if (l.decisao !== 'autorizado' || !atas.has(l.ata.id)) continue;
         const k = p.id + '|' + l.ata.id;
         const g = grupos.get(k) || { p, ata: l.ata, valor: 0 };
-        if (l.item.preco_unitario != null) g.valor += l.qAut * l.item.preco_unitario;
+        if (l.preco != null) g.valor += l.qAut * l.preco;
         grupos.set(k, g);
       }
     }
@@ -1438,8 +1501,11 @@
         return el('tr', null, el('td', { class: 'num' }, l.numero), el('td', null, it ? it.descricao : el('span', { class: 'falta-leve' }, 'item não encontrado na ata')),
           el('td', { class: 'num' }, it && it.preco_unitario != null ? R.moeda(it.preco_unitario) : '—'), el('td', { class: 'num' }, l.preco_anterior != null ? R.moeda(l.preco_anterior) + ' → ' + R.moeda(l.preco_novo) : R.moeda(l.preco_novo)),
           el('td', { class: 'num' }, ins[l.numero]));
-      })), el('p', { class: 'ajuda mt-05' }, 'O novo preço vale para os próximos ofícios. Os ofícios já emitidos continuam com o preço da época, e o preço anterior fica guardado no histórico.'));
-      coletar = () => ({ instrumento: d.instrumento, itens: (d.itens || []).map((l) => { const v = Number(ins[l.numero].value); if (!(v > 0)) throw new Error('Informe o novo preço do item ' + l.numero + '.'); return { numero: Number(l.numero), preco_novo: v }; }) });
+      })));
+      const fDesde = el('input', { type: 'date', value: d.desde || hoje() });
+      add(el('div', { class: 'grade-campos mt-05' }, campo(uid('desde'), 'Novo preço vale a partir de', fDesde, 'Data de assinatura ou de efeito do termo aditivo.', true)),
+        el('p', { class: 'ajuda' }, 'Os ofícios anteriores a essa data mantêm o preço da época; os novos saem com o preço novo. O preço anterior fica na linha do tempo do item.'));
+      coletar = () => ({ instrumento: d.instrumento, desde: fDesde.value || hoje(), itens: (d.itens || []).map((l) => { const v = Number(ins[l.numero].value); if (!(v > 0)) throw new Error('Informe o novo preço do item ' + l.numero + '.'); return { numero: Number(l.numero), preco_novo: v }; }) });
     } else if (x.tipo === 'nova_ata') {
       const f = { numero: txt(d.numero), pregao: txt(d.pregao || ''), processo: txt(d.processo || ''), detentora: txt(d.detentora || ''), cnpj: txt(O.formatarCnpj ? O.formatarCnpj(d.cnpj_detentora || '') : d.cnpj_detentora || ''),
         objeto: area(d.objeto || ''), clausulas: txt(d.clausulas_adesao || '4.1 a 4.3'), assinatura: el('input', { type: 'date', value: d.data_assinatura || '' }),

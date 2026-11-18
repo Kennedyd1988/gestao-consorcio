@@ -91,7 +91,7 @@
       x += vazio();
       let global = 0, semPreco = false;
       const ls = aut.map((l) => {
-        const vu = l.item.preco_unitario;
+        const vu = l.preco != null ? l.preco : l.item.preco_unitario;
         const tot = vu != null && vu !== '' ? R.r4(l.q * vu) : null;
         if (tot == null) semPreco = true; else global += tot;
         return [l.ata.numero, nomeItem(l), l.ata.detentora, l.item.unidade || '', R.num(l.q, 2), vu != null && vu !== '' ? R.moeda(vu) : '—', tot == null ? '—' : R.moeda(tot)];
