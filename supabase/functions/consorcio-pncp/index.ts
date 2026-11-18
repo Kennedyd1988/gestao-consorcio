@@ -86,16 +86,21 @@ const resposta = (corpo: unknown, status = 200) => new Response(JSON.stringify(c
 const API = 'https://pncp.gov.br/api';
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function pegar(url: string, tentativas = 3): Promise<any> {
+async function pegar(url: string, tentativas = 4): Promise<any> {
+  let ultimo = 0;
   for (let i = 0; i < tentativas; i++) {
-    const r = await fetch(url, { headers: { accept: 'application/json' } });
-    if (r.status === 204) return null;
-    if (r.ok) return r.json();
-    if (r.status === 404) return null;
-    await espera(800 * (i + 1));
+    try {
+      const r = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'SOFT+ Consorcios (gestao-consorcio)' } });
+      ultimo = r.status;
+      if (r.status === 204 || r.status === 404) return null;
+      if (r.ok) { const t = await r.text(); return t ? JSON.parse(t) : null; }
+    } catch (_) { ultimo = -1; }
+    await espera(1500 * 2 ** i);
   }
-  throw new Error('PNCP não respondeu: ' + url);
+  throw new Error('PNCP não respondeu (' + (ultimo === -1 ? 'sem conexão' : 'HTTP ' + ultimo) + '): ' + url);
 }
+// Como pegar, mas devolve null em vez de erro (dados complementares)
+async function talvez(url: string) { try { return await pegar(url, 3); } catch (_) { return null; } }
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const compacta = (d: string) => d.replace(/-/g, '');
 const somaDias = (d: string, n: number) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return iso(x); };
@@ -166,14 +171,15 @@ Deno.serve(async (req) => {
         // ---- 2. ata nova
         if (!ata) {
           if (a.cancelado) continue;
-          const det = await pegar(`${base}/atas/${pt.ata}`);
+          if (a.vigenciaFim && a.vigenciaFim.slice(0, 10) < iso(hoje)) continue;   // ata vencida: não interessa
+          const det = await talvez(`${base}/atas/${pt.ata}`);
           if (det && det.possibilidadeAdesao === false) continue;
-          const compra = await pegar(base);
-          const lista = (await pegar(`${base}/itens?pagina=1&tamanhoPagina=500`)) || [];
+          const compra = await talvez(base);
+          const lista = (await talvez(`${base}/itens?pagina=1&tamanhoPagina=500`)) || [];
           const grupos: Record<string, any> = {};
           for (const it of lista) {
             if (!it.temResultado) continue;
-            const rs = (await pegar(`${base}/itens/${it.numeroItem}/resultados`)) || [];
+            const rs = (await talvez(`${base}/itens/${it.numeroItem}/resultados`)) || [];
             for (const r of rs) {
               const g = (grupos[r.niFornecedor] ||= { cnpj: r.niFornecedor, nome: r.nomeRazaoSocialFornecedor, itens: [] });
               g.itens.push({ numero: it.numeroItem, descricao: String(it.descricao || '').split('. Especificação')[0].slice(0, 300), unidade: it.unidadeMedida,
@@ -188,7 +194,8 @@ Deno.serve(async (req) => {
             dados: { numero, pregao: compra?.numeroCompra ? numeroAta(compra.numeroCompra, compra.anoCompra) : null, processo: compra?.processo || null,
               objeto: a.objetoContratacao || compra?.objetoCompra || null, detentora: doAta?.nome || null, cnpj_detentora: doAta?.cnpj || null,
               data_assinatura: a.dataAssinatura, inicio: a.vigenciaInicio, fim: a.vigenciaFim, itens: doAta?.itens || [],
-              grupos: lg.length > 1 ? lg : undefined, aviso: lg.length > 1 ? 'A licitação tem mais de um contratado: confira se o contratado escolhido é o desta ata.' : undefined },
+              grupos: lg.length > 1 ? lg : undefined,
+              aviso: lg.length > 1 ? 'A licitação tem mais de um contratado: confira se o contratado escolhido é o desta ata.' : !lg.length ? 'O PNCP não devolveu os itens e o resultado desta licitação. Confira os dados e cadastre os itens na tela da ata depois de confirmar.' : undefined },
           });
           res.novas++;
           continue;
@@ -202,7 +209,7 @@ Deno.serve(async (req) => {
         }
 
         // ---- 4. termos aditivos (prorrogação e reequilíbrio)
-        const arquivos = (await pegar(`${base}/atas/${pt.ata}/arquivos`)) || [];
+        const arquivos = (await talvez(`${base}/atas/${pt.ata}/arquivos`)) || [];
         const ps = (periodos || []).filter((p: any) => p.ata_id === ata.id).sort((x: any, y: any) => x.numero - y.numero);
         const fimSistema = ps.length ? ps[ps.length - 1].fim : ata.vigencia_fim;
         let prorrogacaoPelaVigencia = a.vigenciaFim && fimSistema && a.vigenciaFim > fimSistema;
