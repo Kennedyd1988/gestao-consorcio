@@ -290,7 +290,7 @@
     if (!estado.base) return;
     const h = (location.hash || '#inicio').slice(1);
     const [rota, ...resto] = h.split('-'); const id = resto.join('-');
-    const destaque = { pedido: 'pedidos', ata: 'atas', solicitacao: 'solicitacoes' }[rota] || rota;
+    const destaque = { pedido: 'pedidos', ata: 'atas', item: 'atas', solicitacao: 'solicitacoes' }[rota] || rota;
     for (const a of $('menu').querySelectorAll('a')) a.dataset.rota === destaque ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
     const c = $('conteudo');
     const tela = TELAS[rota] || TELAS.inicio;
@@ -718,7 +718,7 @@
         el('td', { class: 'num' }, i.preco_unitario != null ? R.moeda(i.preco_unitario) : el('span', { class: 'falta-leve' }, 'falta')), el('td', { class: 'num' }, R.num(i.qtd_registrada * 0.5, 2)),
         el('td', { class: 'num' }, R.num(i.qtd_registrada * 2, 2)), el('td', { class: 'num' }, R.num(cons.tot, 2)), el('td', { class: 'num' + (saldo <= 0 ? ' saldo-zero' : '') }, R.num(saldo, 2)),
         el('td', null, barraUso(cons.tot / (2 * i.qtd_registrada) * 100)),
-        el('td', { class: 'acoes' }, el('button', { type: 'button', class: 'link', onclick: () => detalheItem(i) }, 'Quem aderiu'), podeEditar() ? el('button', { type: 'button', class: 'link ml-1', onclick: () => formItem(a, i) }, 'Editar') : null));
+        el('td', { class: 'acoes' }, el('a', { class: 'link', href: '#item-' + i.id }, 'Aderentes'), podeEditar() ? el('button', { type: 'button', class: 'link ml-1', onclick: () => formItem(a, i) }, 'Editar') : null));
     }), { 'data-sem-paginas': '1' });
     const abaMapa = () => mapaAdesoes(a, itens);
     const abaDados = () => el('dl', { class: 'dados' },
@@ -831,7 +831,8 @@
       const corpo = linhas.map((i) => {
         const cons = consumo(i.id), lim = i.qtd_registrada * 0.5, uso = cons.tot / (2 * i.qtd_registrada) * 100;
         return el('tr', null,
-          el('th', { scope: 'row', class: 'mapa-item' }, el('span', { class: 'mapa-num' }, i.numero), el('span', { class: 'mapa-desc', title: i.descricao }, i.descricao)),
+          el('th', { scope: 'row', class: 'mapa-item' }, el('span', { class: 'mapa-num' }, i.numero), el('span', { class: 'mapa-desc', title: i.descricao }, i.descricao),
+            el('a', { class: 'btn-aderentes', href: '#item-' + i.id, title: 'Ver os órgãos que aderiram ao item ' + i.numero }, 'Aderentes (' + Object.keys(cons.porOrg).length + ') ›')),
           el('td', { class: 'num' }, R.num(i.qtd_registrada, 2), el('span', { class: 'sub-linha' }, i.unidade || '')),
           el('td', { class: 'num mapa-total' }, R.num(cons.tot, 2)),
           el('td', null, barraUso(uso)),
@@ -870,6 +871,58 @@
     return caixa;
   }
 
+
+
+  // ================================================================= ITEM: órgãos que aderiram
+  TELAS.item = (c, id) => {
+    const b = estado.base, i = b.itensPorId[id];
+    if (!i) { rc(c, cabecalho('Item não encontrado', null, el('a', { class: 'btn btn-claro', href: '#atas' }, 'Voltar'))); return; }
+    const a = b.atasPorId[i.ata_id], reg = Number(i.qtd_registrada), lim = reg * 0.5, cons = consumo(i.id);
+    // Linhas autorizadas e negadas deste item
+    const aut = [], neg = [];
+    for (const pi of b.pedido_itens) {
+      if (pi.item_id !== id) continue;
+      const p = b.pedidosPorId[pi.pedido_id]; if (!p || p.situacao === 'cancelado') continue;
+      (pi.decisao === 'autorizado' ? aut : neg).push({ pi, p, o: b.orgaosPorId[p.orgao_id] });
+    }
+    const porOrg = new Map();
+    for (const l of aut) { if (!porOrg.has(l.o.id)) porOrg.set(l.o.id, { o: l.o, qtd: 0, peds: [] }); const g = porOrg.get(l.o.id); g.qtd += Number(l.pi.qtd_autorizada); g.peds.push(l); }
+    const grupos = [...porOrg.values()].sort((x, y) => y.qtd - x.qtd);
+    const vu = i.preco_unitario != null ? Number(i.preco_unitario) : null;
+    const exportar = () => {
+      const linhas = [['ARP ' + a.numero + ' · Item ' + i.numero + ' – ' + i.descricao], ['Registrado', reg, 'Limite por órgão (50%)', lim, 'Limite total (dobro)', reg * 2, 'Aderido', cons.tot], [],
+        ['Órgão', 'CNPJ', 'UF', 'Ofícios do CIMOP', 'Quantidade', '% do limite de 50%', 'Saldo do órgão', 'Valor (R$)']];
+      grupos.forEach((g) => linhas.push([g.o.nome, O.formatarCnpj(g.o.cnpj || ''), g.o.uf || '', g.peds.map((l) => (l.p.numero_oficio || 's/n') + (l.p.data_oficio ? ' (' + R.dataBR(l.p.data_oficio) + ')' : '')).join('; '),
+        g.qtd, Math.round(g.qtd / lim * 1000) / 10, Math.max(0, lim - g.qtd), vu != null ? g.qtd * vu : null]));
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(linhas), 'Aderentes');
+      baixar('Aderentes - ARP ' + a.numero.replace('/', '-') + ' item ' + i.numero + '.xlsx', XLSX.write(wb, { type: 'array', bookType: 'xlsx' }), XLSX_T);
+    };
+    rc(c,
+      cabecalho('Item ' + i.numero + ' · ' + i.descricao, 'ARP ' + a.numero + ' · ' + a.detentora + ' · Pregão ' + a.pregao,
+        el('a', { class: 'btn btn-claro', href: '#ata-' + a.id }, '‹ ARP ' + a.numero), el('button', { type: 'button', class: 'btn btn-claro', onclick: exportar }, 'Exportar (Excel)'),
+        podeEditar() ? el('a', { class: 'btn btn-primario', href: '#novo', onclick: () => { rascunho = rascunho || novoRascunho(); if (!rascunho.atas.includes(a.id)) rascunho.atas.push(a.id); } }, '+ Novo pedido nesta ata') : null),
+      el('div', { class: 'resumo-pntp' },
+        el('div', null, el('span', { class: 'rotulo' }, 'Registrado'), el('strong', { class: 'num-grande' }, R.num(reg, 2)), el('small', null, (i.unidade || '') + (vu != null ? ' · R$ ' + R.moeda(vu) + ' por unidade' : ''))),
+        el('div', null, el('span', { class: 'rotulo' }, 'Limite por órgão (50%)'), el('strong', { class: 'num-grande' }, R.num(lim, 2)), el('small', null, 'art. 86, § 4º')),
+        el('div', null, el('span', { class: 'rotulo' }, 'Total aderido'), el('strong', { class: 'num-grande' }, R.num(cons.tot, 2)), el('small', null, R.num(cons.tot / (2 * reg) * 100, 1) + '% do dobro · ' + grupos.length + ' órgão(s)')),
+        el('div', null, el('span', { class: 'rotulo' }, 'Saldo para novas adesões'), el('strong', { class: 'num-grande' }, R.num(Math.max(0, reg * 2 - cons.tot), 2)), el('small', null, 'limite total: ' + R.num(reg * 2, 2) + ' (§ 5º)'))),
+      el('section', { class: 'cartao' }, el('h2', null, 'Órgãos que aderiram'),
+        grupos.length ? el('div', { class: 'tabela-caixa', 'data-sem-paginas': '1' }, el('table', { class: 'tabela' },
+          el('thead', null, el('tr', null, ['Órgão', 'Ofícios do CIMOP', 'Quantidade', 'Uso dos 50%', 'Saldo do órgão', 'Valor (R$)'].map((t, k) => el('th', { scope: 'col', class: k === 2 || k === 4 || k === 5 ? 'num' : null }, t)))),
+          el('tbody', null, grupos.map((g) => el('tr', { class: g.qtd > lim + 1e-9 ? 'lin-negado' : null },
+            el('td', null, el('strong', null, g.o.nome), el('span', { class: 'sub-linha' }, (g.o.cnpj ? O.formatarCnpj(g.o.cnpj) : 'sem CNPJ') + ' · ' + g.o.esfera)),
+            el('td', null, el('ul', { class: 'm-0 lista-oficios' }, g.peds.map((l) => el('li', null, el('a', { href: '#pedido-' + l.p.id }, 'Of. ' + (l.p.numero_oficio || 's/n')),
+              (l.p.data_oficio ? ' · ' + R.dataBR(l.p.data_oficio) : '') + ' · ' + R.num(l.pi.qtd_autorizada, 2) + (l.p.origem === 'migracao' ? ' (migrado)' : ''))))),
+            el('td', { class: 'num' }, R.num(g.qtd, 2)),
+            el('td', null, barraUso(g.qtd / lim * 100), g.qtd > lim + 1e-9 ? el('span', { class: 'sub-linha ajuda-erro' }, 'acima do limite de 50%') : null),
+            el('td', { class: 'num' + (lim - g.qtd <= 0 ? ' saldo-zero' : '') }, R.num(Math.max(0, lim - g.qtd), 2)),
+            el('td', { class: 'num' }, vu != null ? R.moeda(g.qtd * vu) : '—')))),
+          el('tfoot', null, el('tr', null, el('th', { scope: 'row' }, 'Total'), el('td', null), el('td', { class: 'num' }, R.num(cons.tot, 2)), el('td', null), el('td', null),
+            el('td', { class: 'num' }, vu != null ? R.moeda(cons.tot * vu) : '—'))))) : el('p', { class: 'vazio' }, 'Nenhum órgão aderiu a este item ainda.')),
+      neg.length ? el('section', { class: 'cartao' }, el('h2', null, 'Pedidos negados neste item'),
+        tabela(['Órgão', 'Ofício', 'Qtd pedida', 'Motivo'], neg.map((l) => el('tr', null, el('td', null, l.o.nome), el('td', null, el('a', { href: '#pedido-' + l.p.id }, l.p.numero_oficio || 's/n')),
+          el('td', { class: 'num' }, R.num(l.pi.qtd_solicitada, 2)), el('td', null, l.pi.motivo || ''))))) : null);
+  };
 
   // ================================================================= SOLICITAÇÕES (formulário online)
   const SIT_SOL = { recebida: ['Recebida', 'etiqueta-pendente'], em_analise: ['Em análise', 'etiqueta-azul'], atendida: ['Atendida', 'etiqueta-ativo'], recusada: ['Recusada', 'etiqueta-desativado'] };

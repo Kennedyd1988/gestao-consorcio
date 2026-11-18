@@ -133,3 +133,16 @@
 .mapa-barra .aba-p { border: 0 !important; background: transparent; border-radius: 99px; padding: 6px 14px; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--text-dim); cursor: pointer; box-shadow: none; }
 .mapa-barra .aba-p[aria-selected="true"] { background: #0f2947; color: #fff; }
 .mapa-barra .aba-p[aria-selected="true"]::after { display: none; }
+
+/* Campos sempre claros (navegador/sistema em modo escuro deixava campos pretos) */
+:root { color-scheme: light; }
+input, select, textarea { background-color: #fff; color: var(--text); }
+input::placeholder, textarea::placeholder { color: #8a9bb0; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); }
+input[type="file"] { background: #fff; color: var(--text); }
+.filtros input, .filtros select, input.busca, .tabela input.qtd { background-color: #fff; color: var(--text); }
+.menu-pesquisa input { background: #16365c; color: #fff; }
+.btn-aderentes { display: inline-block; margin: 4px 0 0 30px; font-size: 12px; font-weight: 700; color: var(--brand); text-decoration: none; border: 1px solid #c9d8ef; background: #f3f7fd; border-radius: 99px; padding: 2px 10px; }
+.btn-aderentes:hover { background: var(--brand); color: #fff; border-color: var(--brand); }
+.lista-oficios { list-style: none; padding: 0; font-size: 13.5px; }
+.lista-oficios li + li { margin-top: 2px; }

@@ -1,7 +1,9 @@
 {
-  "versao": "0.2.0",
+  "versao": "0.2.1",
   "data": "2026-11-17",
   "notas": [
+    "Mapa de adesões: botão \"Aderentes\" em cada item abre uma tela própria com os órgãos que aderiram, ofícios, quantidade, uso dos 50%, saldo de cada órgão, valor e pedidos negados, com exportação para Excel.",
+    "Campos de digitação sempre claros, mesmo com o computador ou o navegador em modo escuro (antes alguns ficavam pretos).",
     "Formulário online de solicitação de adesão (sem login): o órgão informa o CNPJ, vê o saldo disponível para ele em cada item, digita as quantidades, anexa o ofício em PDF e recebe um protocolo. As solicitações chegam em \"Solicitações recebidas\" e viram pedido com um clique. Rode o script 02 na Supabase.",
     "Mapa de adesões redesenhado: colunas por órgão (somando os ofícios) ou por ofício, cores pelo uso do limite de 50% de cada órgão, item e cabeçalho fixos ao rolar, filtro de itens e valor autorizado por órgão.",
     "Primeira versão: atas e itens, órgãos aderentes, pedidos de adesão com conferência automática dos limites de 50% por órgão e do dobro por item (art. 86, §§ 4º e 5º, da Lei nº 14.133/2021), ofício em Word no padrão do CIMOP, mapa de adesões em Excel, importação por planilha-modelo e migração do histórico."
