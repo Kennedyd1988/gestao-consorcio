@@ -11,8 +11,8 @@
   function vocativo(org) {
     if (org.vocativo) return org.vocativo;
     const fem = /^à/i.test(org.tratamento || '');
-    const cargo = (org.cargo || '').split(/\s+/)[0] || (fem ? 'Senhora' : 'Senhor');
-    return (fem ? 'Senhora ' : 'Senhor ') + cargo + ',';
+    const cargo = (org.cargo || '').split(/\s+/)[0];
+    return (fem ? 'Senhora' : 'Senhor') + (cargo ? ' ' + cargo : '') + ',';
   }
 
   // ---- XML helpers

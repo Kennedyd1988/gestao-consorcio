@@ -1,7 +1,10 @@
 {
-  "versao": "0.5.2",
+  "versao": "0.6.0",
   "data": "2026-11-17",
   "notas": [
+    "Relatório em PDF (menu Adesões): situação completa das adesões, com resumo, situação de cada ata (vigência, ciclo, órgãos, valor e item mais consumido), itens e saldos por ata com os órgãos aderentes, órgãos aderentes consolidados, pedidos negados, pontos de atenção, fundamentação legal e assinatura do Presidente, com o timbre do CIMOP.",
+    "E-mail de resposta ao órgão: na tela do pedido, \"Revisar e enviar e-mail\" abre o texto pronto, com o ofício em Word anexo e os links do processo completo (cadastrado em \"Editar ata\"; em branco, usa a página da licitação no PNCP) e das resoluções (Configurações › E-mail e documentos). Só envia depois que você confere e clica em Enviar, e fica registrado quem enviou, quando e para quem. Rode o script 05 e publique a função consorcio-enviar-email.",
+    "Cadastro do órgão com telefone. Corrigido o vocativo \"Senhor Senhor,\" quando o órgão não tem cargo cadastrado.",
     "Mapa de adesões: cada item vem recolhido, numa linha só, com uma seta que abre os órgãos que aderiram. O botão \"Expandir todos\" abre tudo de uma vez.",
     "Mapa de adesões refeito em cartões: cada item mostra registrado, aderido e uso do dobro, com um cartão por órgão (ou por ofício) com a quantidade e quanto ele já usou dos 50%. Não há mais rolagem para o lado, e abaixo fica o valor autorizado por órgão com a participação de cada um. Telefone do formulário com máscara (84) 99999-9999.",
     "Atualizações do PNCP: toda madrugada (e pelo botão \"Buscar agora\") o sistema consulta as atas do CIMOP no PNCP, lê os termos aditivos publicados e mostra o que mudou: ata nova (com itens e preços do resultado), prorrogação com ou sem renovação dos quantitativos, novo preço por reequilíbrio e cancelamento. Cada atualização é conferida e só entra no sistema depois de \"Confirmar\". Rode o script 04 na Supabase e publique a função consorcio-pncp.",

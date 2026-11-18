@@ -255,3 +255,8 @@ a.mapa-pill.uso-excedido .mapa-pill-uso small { color: #8f2626; font-weight: 700
   .mapa-linha-topo { grid-template-columns: auto auto minmax(0, 1fr); }
   .mapa-linha-uso, .mapa-linha-topo .btn-aderentes { grid-column: 3; }
 }
+.lista-docs { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.linha-doc { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(240px, 2fr) auto; gap: 8px; width: 100%; align-items: center; }
+.linha-doc input { margin: 0; }
+@media (max-width: 760px) { .linha-doc { grid-template-columns: 1fr; } }
+.lista-relatorio { margin: 0 0 6px; padding-left: 18px; line-height: 1.7; }

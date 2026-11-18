@@ -28,6 +28,8 @@ Segue o manual de padrões SOFT+ (mesmo visual e componentes do painel do Portal
 | `supabase/NN_*.sql` | Scripts do banco, reexecutáveis, rodar em ordem |
 | `supabase/functions/consorcio-convidar-usuario` | Edge Function que cria usuários |
 | `supabase/functions/consorcio-pncp` | Edge Function que busca as atas e os termos aditivos no PNCP (agenda diária às 04h, horário de Brasília) |
+| `supabase/functions/consorcio-enviar-email` | Edge Function que envia o e-mail de resposta (SMTP do projeto: SMTP_HOST, SMTP_PORT, SMTP_USUARIO, SMTP_SENHA, SMTP_REMETENTE; opcional CONSORCIO_SMTP_REMETENTE) |
+| `supabase/05_email_documentos.sql` | Links dos documentos, link do processo por ata, telefone do órgão e registro dos e-mails |
 | `supabase/04_pncp.sql` | Tabelas das atualizações do PNCP, confirmação e agenda diária (pg_cron) |
 | `versao.json` | Versão e notas (fonte única da versão) |
 
@@ -40,6 +42,7 @@ Usa o **mesmo projeto Supabase do Portal PNTP** (SOFT+), com tudo no schema **`c
 3. Dar acesso de administrador: rodar o `insert` comentado no fim do script 01 (o login pode ser o mesmo do portal).
 4. Publicar a Edge Function `consorcio-convidar-usuario` com "Verify JWT" desligado.
 5. Rodar `04_pncp.sql` e publicar a Edge Function `consorcio-pncp` (arquivo único `index.ts`) com "Verify JWT" desligado.
+6. Rodar `05_email_documentos.sql` e publicar a Edge Function `consorcio-enviar-email` com "Verify JWT" desligado.
 5. `js/config.js` já aponta para o projeto (URL e chave pública). Nunca a chave secreta.
 6. Authentication › URL Configuration: incluir o endereço do sistema em Redirect URLs (para "Esqueci minha senha").
 7. Cloudflare Pages ligado a este repositório (sem build; diretório raiz).

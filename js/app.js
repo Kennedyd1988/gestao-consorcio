@@ -280,7 +280,7 @@
 
   // ---------------------------------------------------------------- menu e rotas
   const MENU = [
-    ['Adesões', [['solicitacoes', 'Solicitações recebidas'], ['novo', 'Novo pedido de adesão', () => podeEditar()], ['pedidos', 'Pedidos e ofícios']]],
+    ['Adesões', [['solicitacoes', 'Solicitações recebidas'], ['novo', 'Novo pedido de adesão', () => podeEditar()], ['pedidos', 'Pedidos e ofícios'], ['relatorio', 'Relatório em PDF']]],
     ['Cadastros', [['atas', 'Atas de registro de preços'], ['orgaos', 'Órgãos aderentes'], ['pncp', 'Atualizações do PNCP', () => podeEditar()]]],
     ['Sistema', [['importar', 'Importar planilha', () => podeEditar()], ['configuracoes', 'Configurações do ofício', () => eAdmin()], ['usuarios', 'Usuários', () => eAdmin()]]],
   ];
@@ -1097,6 +1097,112 @@
   };
 
 
+
+  // ================================================================= RELATÓRIO INSTITUCIONAL (PDF)
+  function dadosRelatorio(opc) {
+    const b = estado.base, cf = b.config;
+    const salvo = estado.ciclos; estado.ciclos = {};   // sempre o ciclo vigente de cada ata
+    try {
+      const vigente = (a) => a.ativo !== false && (!a.vigencia_fim || diasAte(a.vigencia_fim) >= 0);
+      const atas = b.atas.filter((a) => opc.escopo === 'todas' ? true : opc.escopo === 'vigentes' ? vigente(a) : a.id === opc.escopo)
+        .sort((x, y) => x.numero.slice(-4).localeCompare(y.numero.slice(-4)) || x.numero.localeCompare(y.numero));
+      const idsAtas = new Set(atas.map((a) => a.id));
+      const orgaos = new Map(); let valorTotal = 0; const pedidosSet = new Set();
+      const linhasAtas = atas.map((a) => {
+        const itens = b.itens.filter((i) => i.ata_id === a.id).sort((x, y) => x.numero - y.numero);
+        const cic = R.cicloAtual(b, a.id); const ps = R.periodosDa(b, a.id);
+        const nCic = cic ? R.ciclosDa(b, a.id).findIndex((c) => c.id === cic) + 1 : 0;
+        let maior = 0, valor = 0; const porOrg = new Map();
+        const linhas = itens.map((i) => {
+          const c = consumo(i.id), reg = Number(i.qtd_registrada), dobro = 2 * reg, uso = reg ? c.tot / dobro * 100 : 0;
+          maior = Math.max(maior, uso);
+          if (i.preco_unitario != null) valor += c.tot * i.preco_unitario;
+          return { numero: i.numero, descricao: i.descricao, unidade: i.unidade || '', registrado: reg, dobro, aderido: c.tot, saldo: Math.max(0, dobro - c.tot), uso };
+        }).filter((l) => opc.todosItens || l.aderido > 0);
+        for (const pi of b.pedido_itens) {
+          const it = b.itensPorId[pi.item_id]; if (!it || it.ata_id !== a.id || pi.decisao !== 'autorizado' || !noCiclo(pi, a.id)) continue;
+          const p = b.pedidosPorId[pi.pedido_id]; if (!p || p.situacao === 'cancelado') continue;
+          const v = it.preco_unitario != null ? Number(pi.qtd_autorizada) * it.preco_unitario : 0;
+          const o = porOrg.get(p.orgao_id) || { nome: b.orgaosPorId[p.orgao_id].nome, oficios: new Set(), valor: 0 }; o.oficios.add(p.numero_oficio || 's/n'); o.valor += v; porOrg.set(p.orgao_id, o);
+          const g = orgaos.get(p.orgao_id) || { org: b.orgaosPorId[p.orgao_id], pedidos: new Set(), atas: new Set(), valor: 0 };
+          g.pedidos.add(p.id); g.atas.add(a.numero); g.valor += v; orgaos.set(p.orgao_id, g); pedidosSet.add(p.id);
+        }
+        valorTotal += valor;
+        const fim = ps.length ? ps[ps.length - 1].fim : a.vigencia_fim;
+        return { numero: a.numero, pregao: a.pregao || '—', detentora: a.detentora || '—', objeto: a.objeto || '', vigencia: fim ? 'até ' + R.dataBR(fim) : 'não informada',
+          ciclo: nCic ? nCic + 'º' : '—', itens: itens.length, orgaos: porOrg.size, valor, maior, linhas,
+          orgaosLista: [...porOrg.values()].sort((x, y) => y.valor - x.valor).map((o) => ({ nome: o.nome, oficios: [...o.oficios].join(', '), valor: o.valor })) };
+      });
+      const negados = [];
+      for (const p of b.pedidos) {
+        if (p.situacao === 'cancelado' || p.origem === 'migracao') continue;
+        for (const l of linhasDoPedido(p)) if (l.decisao !== 'autorizado' && idsAtas.has(l.ata.id) && noCiclo(l.pi, l.ata.id))
+          negados.push({ oficio: p.numero_oficio || 's/n', data: R.dataBR(p.data_oficio), orgao: b.orgaosPorId[p.orgao_id].nome, item: l.ata.numero + ' / ' + l.item.numero, qtd: l.q, motivo: l.motivo || '—', ord: ordOficio(p) });
+      }
+      negados.sort((x, y) => y.ord - x.ord);
+      const alertas = [];
+      for (const a of atas) {
+        if (a.vigencia_fim) { const dd = diasAte(a.vigencia_fim); if (dd >= 0 && dd <= 60) alertas.push({ tipo: 'falta', texto: 'ARP ' + a.numero + ' (' + a.detentora + ') vence em ' + dd + ' dia(s), em ' + R.dataBR(a.vigencia_fim) + '.' }); }
+        for (const i of b.itens.filter((x) => x.ata_id === a.id)) { const c = consumo(i.id).tot, u = c / (2 * i.qtd_registrada) * 100; if (u >= 80) alertas.push({ tipo: u > 100 ? 'erro' : 'falta', texto: 'ARP ' + a.numero + ', item ' + i.numero + ' (' + i.descricao + '): ' + R.num(u, 0) + '% do limite total (dobro) já aderido.' }); }
+      }
+      for (const o of R.conferirHistorico(b)) {
+        const a = b.atasPorId[o.item.ata_id]; if (!idsAtas.has(a.id)) continue;
+        alertas.unshift({ tipo: 'erro', texto: o.tipo === '50%' ? o.orgao.nome + ' tem ' + R.num(o.valor, 2) + ' autorizados no item ' + o.item.numero + ' da ARP ' + a.numero + ', acima do limite de 50% (' + R.num(o.limite, 2) + ').'
+          : 'Item ' + o.item.numero + ' da ARP ' + a.numero + ': total aderido ' + R.num(o.valor, 2) + ' acima do dobro (' + R.num(o.limite, 2) + ').' });
+      }
+      const listaOrg = [...orgaos.values()].sort((x, y) => y.valor - x.valor).map((g) => ({ nome: g.org.nome, local: [g.org.municipio, g.org.uf].filter(Boolean).join('/') || '—', pedidos: g.pedidos.size, atas: [...g.atas].join(', '), valor: g.valor }));
+      const pedidosArr = [...pedidosSet].map((id) => b.pedidosPorId[id]);
+      const agora = new Date();
+      const nomeAta = typeof opc.escopo === 'string' && b.atasPorId[opc.escopo] ? 'ARP ' + b.atasPorId[opc.escopo].numero : null;
+      return {
+        sigla: cf.sigla, orgao: cf.orgao_nome, regulamento: cf.resolucao_srp + (cf.resolucao_alteracao ? ', alterado pela ' + cf.resolucao_alteracao : ''),
+        presidente: cf.presidente_nome, presidenteCargo: cf.presidente_cargo, usuario: estado.usuario.nome,
+        dataBR: R.dataBR(hoje()), geradoEm: agora.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        escopo: nomeAta || (opc.escopo === 'todas' ? 'Todas as atas cadastradas' : 'Atas vigentes'),
+        detalhe: opc.detalhe, incluirNegados: opc.negados, atas: linhasAtas, orgaos: listaOrg, negados, alertas,
+        indicadores: [
+          { rotulo: 'Atas', valor: String(linhasAtas.length), sub: atas.filter(vigente).length + ' vigente(s)' },
+          { rotulo: 'Órgãos aderentes', valor: String(listaOrg.length), sub: pedidosArr.length + ' ofício(s) com autorização', cor: [29, 95, 209] },
+          { rotulo: 'Itens negados', valor: String(negados.length), sub: 'pedidos lançados no sistema', cor: [178, 109, 6] },
+          { rotulo: 'Valor autorizado', valor: 'R$ ' + R.moeda(valorTotal), sub: 'ciclo vigente, itens com preço', cor: [16, 42, 72] }],
+        num: R.num, moeda: R.moeda,
+      };
+    } finally { estado.ciclos = salvo; }
+  }
+
+  TELAS.relatorio = (c) => {
+    const b = estado.base;
+    const f = {
+      escopo: sel([['vigentes', 'Atas vigentes'], ['todas', 'Todas as atas cadastradas'], ...b.atas.map((a) => [a.id, 'Só a ARP ' + a.numero + ' – ' + (a.detentora || '')])], 'vigentes'),
+      detalhe: el('input', { type: 'checkbox', checked: true }), todos: el('input', { type: 'checkbox' }), negados: el('input', { type: 'checkbox', checked: true }) };
+    const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Gerar relatório em PDF');
+    btn.addEventListener('click', async () => {
+      ocupado(btn, 'Gerando o PDF…');
+      try {
+        const d = dadosRelatorio({ escopo: f.escopo.value, detalhe: f.detalhe.checked, todosItens: f.todos.checked, negados: f.negados.checked });
+        if (!d.atas.length) { toast('Nenhuma ata nesse filtro.', true); return; }
+        const blob = await window.RELATORIO.gerar(d);
+        const nome = 'Relatório de Adesões - ' + (b.config.sigla || 'CIMOP') + ' - ' + hoje().split('-').reverse().join('-') + '.pdf';
+        await baixar(nome, blob, 'application/pdf');
+        toast('Relatório gerado.');
+      } catch (e) { console.error(e); toast(e.message, true); } finally { ocupado(btn); }
+    });
+    rc(c, cabecalho('Relatório em PDF', 'Situação completa das adesões, pronta para imprimir, anexar a processos ou apresentar à assembleia.', btn),
+      el('section', { class: 'cartao' }, el('h2', null, 'O que vai no relatório'),
+        el('ul', { class: 'lista-relatorio' },
+          el('li', null, el('strong', null, 'Resumo: '), 'atas, órgãos aderentes, itens negados e valor autorizado.'),
+          el('li', null, el('strong', null, 'Situação das atas: '), 'contratado, vigência, ciclo de quantitativos, órgãos, valor e o item mais consumido.'),
+          el('li', null, el('strong', null, 'Itens e saldos por ata: '), 'registrado, limite total (dobro), aderido, saldo e uso, com os órgãos de cada ata.'),
+          el('li', null, el('strong', null, 'Órgãos aderentes, pedidos negados e pontos de atenção'), ' (vencimentos, itens perto do dobro e excessos).'),
+          el('li', null, 'Fundamentação legal (art. 86 da Lei nº 14.133/2021) e assinatura do Presidente.')),
+        el('div', { class: 'grade-campos mt-1' }, campo('rl-escopo', 'Atas', f.escopo)),
+        el('label', { class: 'checkbox' }, f.detalhe, ' Incluir itens e saldos de cada ata'),
+        el('label', { class: 'checkbox' }, f.todos, ' Mostrar também os itens sem adesão'),
+        el('label', { class: 'checkbox' }, f.negados, ' Incluir pedidos negados ou autorizados em parte'),
+        el('p', { class: 'ajuda mt-05' }, 'Os números consideram o ciclo vigente de cada ata (depois de uma prorrogação com renovação dos quantitativos, só as adesões do novo período).'),
+        el('div', { class: 'mt-1' }, el('button', { type: 'button', class: 'btn btn-primario', onclick: () => btn.click() }, 'Gerar relatório em PDF'))));
+  };
+
   // ================================================================= ATUALIZAÇÕES DO PNCP
   const TIPO_PNCP = { nova_ata: ['Nova ata', 'etiqueta-azul'], prorrogacao: ['Prorrogação', 'etiqueta-vig'], reequilibrio: ['Novo preço', 'etiqueta-pendente'], cancelamento: ['Cancelamento', 'etiqueta-negado'] };
   const SIT_PNCP = { pendente: ['Aguardando', 'etiqueta-pendente'], confirmada: ['Confirmada', 'etiqueta-ativo'], ignorada: ['Ignorada', 'etiqueta-desativado'] };
@@ -1616,8 +1722,46 @@
       el('section', { class: 'cartao' }, el('h2', null, 'Fundamentação'),
         el('div', { class: 'grade-campos' }, campo('cf-res', 'Regulamento do SRP', f.resolucao_srp, 'Citado nos arts. 28 e 29.', true), campo('cf-res2', 'Resolução que altera', f.resolucao_alteracao)),
         campo('cf-anexos', 'Texto padrão dos anexos', f.texto_anexos, '{pregao} vira "Pregão Eletrônico nº 008/2025". Pode ser ajustado em cada pedido.')),
-      el('div', { class: 'barra-salvar' }, btn));
+      el('div', { class: 'barra-salvar' }, btn),
+      secaoEmailDocumentos());
   };
+
+  // Configurações › E-mail e documentos (links das resoluções e modelo do e-mail de resposta)
+  function secaoEmailDocumentos() {
+    const cf = estado.base.config;
+    let docs = (cf.documentos || []).map((d) => ({ ...d }));
+    if (!docs.length) docs = [{ titulo: cf.resolucao_srp || 'Resolução CIMOP nº 018/2023', url: '' }, { titulo: cf.resolucao_alteracao || 'Resolução CIMOP nº 001/2026', url: '' }];
+    const caixaDocs = el('div', { class: 'lista-docs' });
+    const desenharDocs = () => rc(caixaDocs, docs.map((d, k) => {
+      const t = txt(d.titulo, { placeholder: 'Resolução CIMOP nº 018/2023', 'aria-label': 'Título do documento ' + (k + 1) });
+      const u = txt(d.url, { type: 'url', placeholder: 'https://… (portal da transparência, Google Drive, PNCP…)', 'aria-label': 'Link do documento ' + (k + 1) });
+      t.addEventListener('input', () => (d.titulo = t.value)); u.addEventListener('input', () => (d.url = u.value));
+      return el('div', { class: 'linha-doc' }, t, u, el('button', { type: 'button', class: 'btn btn-claro btn-p', 'aria-label': 'Remover documento', onclick: () => { docs.splice(k, 1); desenharDocs(); } }, 'Remover'));
+    }), el('button', { type: 'button', class: 'link', onclick: () => { docs.push({ titulo: '', url: '' }); desenharDocs(); } }, '+ Documento'));
+    desenharDocs();
+    const f = { resposta: txt(cf.email_resposta || '', { type: 'email', placeholder: 'licitacao@cimop.rn.gov.br' }), copia: txt(cf.email_copia || ''),
+      assunto: txt(cf.email_assunto || ''), corpo: area(cf.email_corpo || '', { rows: 12 }) };
+    const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar e-mail e documentos');
+    btn.addEventListener('click', async () => {
+      const lista = docs.map((d) => ({ titulo: (d.titulo || '').trim(), url: (d.url || '').trim() })).filter((d) => d.titulo || d.url);
+      const ruim = lista.find((d) => !d.titulo || !/^https?:\/\/\S+$/.test(d.url));
+      if (ruim) { toast('Cada documento precisa de título e de um link completo (https://…).', true); return; }
+      if (!marcarErro(f.resposta, f.resposta.value.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.resposta.value.trim()) ? 'E-mail inválido.' : '')) return;
+      ocupado(btn, 'Salvando…');
+      try {
+        await D.salvarConfig({ documentos: lista, email_resposta: f.resposta.value.trim() || null, email_copia: f.copia.value.trim() || null,
+          email_assunto: f.assunto.value.trim(), email_corpo: f.corpo.value });
+        await recarregar(); toast('E-mail e documentos salvos.');
+      } catch (e) { toast(/column|coluna|schema cache/i.test(e.message) ? 'Rode o script 05 na Supabase para liberar esta parte.' : e.message, true); } finally { ocupado(btn); }
+    });
+    return el('section', { class: 'cartao mt-1' }, el('h2', null, 'E-mail de resposta e documentos'),
+      el('p', { class: 'ajuda' }, 'O e-mail ao órgão só sai depois que você revisa e clica em "Enviar", na tela do pedido. Ele leva o ofício em Word anexo e os links abaixo, além do link do processo completo de cada ata (cadastrado em "Editar ata"; em branco, usa a página da licitação no PNCP).'),
+      el('h3', null, 'Documentos que acompanham todo ofício'), caixaDocs,
+      el('div', { class: 'grade-campos mt-1' }, campo('cf-resp', 'Respostas do órgão vão para', f.resposta, 'Endereço que recebe quando o município clicar em "Responder".'), campo('cf-cc', 'Cópia em todos os e-mails', f.copia, 'Opcional. Separe com vírgula.')),
+      campo('cf-assunto', 'Assunto', f.assunto),
+      campo('cf-corpo', 'Texto do e-mail', f.corpo, 'Campos: {vocativo} {oficio} {sigla} {assunto} {solicitacao} {documentos} {presidente} {presidente_cargo} {orgao} {orgao_destino}. Você ainda pode ajustar o texto em cada envio.'),
+      el('div', { class: 'barra-salvar' }, btn));
+  }
 
   // ================================================================= USUÁRIOS
   TELAS.usuarios = async (c) => {
