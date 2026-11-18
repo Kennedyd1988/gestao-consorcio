@@ -171,5 +171,61 @@
     }
     return doc.output('blob');
   }
-  window.RELATORIO = { gerar, carregarLibs };
+
+  // Relatório resumido: lista consolidada de todas as adesões (uma linha por ofício e ata)
+  async function gerarResumido(d) {
+    await carregarLibs();
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+    const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 12;
+    const logo = await imagem(d.logo || 'logo-cimop.jpg');
+    const topo = () => {
+      if (logo) doc.addImage(logo, 'JPEG', M, 7, 14, 10.4);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...NAVY);
+      doc.text(d.sigla + ' · Adesões às Atas de Registro de Preços · relação consolidada', M + 17, 12);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...SUAVE);
+      doc.text(d.escopo + ' · Situação em ' + d.dataBR, M + 17, 16.5);
+      doc.setDrawColor(...VERDE); doc.setLineWidth(0.6); doc.line(M, 20, W - M, 20);
+    };
+    topo();
+    let y = 27;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...NAVY); doc.text('Relação de adesões autorizadas', M, y); y += 5.5;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...SUAVE);
+    doc.text(d.linhas.length + ' adesão(ões) · ' + d.qtdOrgaos + ' órgão(s) · valor total autorizado R$ ' + d.moeda(d.total) + '. Não inclui pedidos cancelados nem itens negados.' + (d.semData ? ' ' + d.semData + ' adesão(ões) migrada(s) da planilha antiga sem data informada.' : ''), M, y); y += 5;
+    doc.autoTable({
+      startY: y, margin: { left: M, right: M, top: 26, bottom: 16 }, theme: 'grid',
+      head: [['Nº', 'Data da autorização', 'Ofício do CIMOP', 'Órgão aderente', 'Município/UF', 'ARP', 'Pregão', 'Contratado', 'Valor total (R$)']],
+      body: d.linhas.map((l, k) => [k + 1, l.data, l.oficio, l.orgao, l.local, l.arp, l.pregao, l.contratado, d.moeda(l.valor)]),
+      foot: [[{ content: 'Total autorizado', colSpan: 8, styles: { halign: 'right' } }, d.moeda(d.total)]], showFoot: 'lastPage',
+      styles: { font: 'helvetica', fontSize: 7.8, cellPadding: 1.6, textColor: TEXTO, lineColor: LINHA, lineWidth: 0.2, valign: 'middle' },
+      headStyles: { fillColor: TOM, textColor: NAVY, fontStyle: 'bold', fontSize: 7.4 },
+      footStyles: { fillColor: TOM, textColor: NAVY, fontStyle: 'bold', halign: 'right' },
+      alternateRowStyles: { fillColor: [250, 252, 254] }, rowPageBreak: 'avoid',
+      columnStyles: { 0: { halign: 'center', cellWidth: 9 }, 1: { cellWidth: 21 }, 2: { cellWidth: 20 }, 4: { cellWidth: 30 }, 5: { cellWidth: 17, fontStyle: 'bold' }, 6: { cellWidth: 17 }, 8: { halign: 'right', cellWidth: 28 } },
+      didDrawPage: () => { if (doc.internal.getNumberOfPages() > 1) topo(); },
+    });
+    y = doc.lastAutoTable.finalY + 8;
+    if (y > H - 50) { doc.addPage(); topo(); y = 28; }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(...NAVY); doc.text('Resumo por ata', M, y); y += 2;
+    doc.autoTable({
+      startY: y, margin: { left: M, right: M, top: 26, bottom: 16 }, theme: 'grid', tableWidth: 180,
+      head: [['ARP', 'Contratado', 'Adesões', 'Órgãos', 'Valor total (R$)']],
+      body: d.porAta.map((a) => [a.arp, a.contratado, a.adesoes, a.orgaos, d.moeda(a.valor)]),
+      foot: [['Total', '', String(d.linhas.length), String(d.qtdOrgaos), d.moeda(d.total)]],
+      styles: { font: 'helvetica', fontSize: 7.8, cellPadding: 1.6, textColor: TEXTO, lineColor: LINHA, lineWidth: 0.2 },
+      headStyles: { fillColor: TOM, textColor: NAVY, fontStyle: 'bold', fontSize: 7.4 }, footStyles: { fillColor: TOM, textColor: NAVY, fontStyle: 'bold' },
+      columnStyles: { 0: { cellWidth: 18, fontStyle: 'bold' }, 2: { halign: 'right', cellWidth: 18 }, 3: { halign: 'right', cellWidth: 18 }, 4: { halign: 'right', cellWidth: 30 } },
+      didDrawPage: () => { if (doc.internal.getNumberOfPages() > 1) topo(); },
+    });
+    const total = doc.internal.getNumberOfPages();
+    for (let p = 1; p <= total; p++) {
+      doc.setPage(p);
+      doc.setDrawColor(...LINHA); doc.setLineWidth(0.2); doc.line(M, H - 10, W - M, H - 10);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.2); doc.setTextColor(...SUAVE);
+      doc.text('Gerado em ' + d.geradoEm + ' por ' + d.usuario + ' · SOFT+ Consórcios', M, H - 6);
+      doc.text('Página ' + p + ' de ' + total, W - M, H - 6, { align: 'right' });
+    }
+    return doc.output('blob');
+  }
+  window.RELATORIO = { gerar, gerarResumido, carregarLibs };
 })();

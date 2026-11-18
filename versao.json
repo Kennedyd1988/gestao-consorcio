@@ -1,7 +1,9 @@
 {
-  "versao": "0.6.0",
+  "versao": "0.6.1",
   "data": "2026-11-17",
   "notas": [
+    "Relatório resumido em PDF: relação de todas as adesões autorizadas, com data da autorização, ofício, órgão, município, ata, pregão, contratado e valor total, mais o total geral e um resumo por ata.",
+    "CNPJ pela Receita Federal: no formulário do município e no cadastro de órgãos, ao digitar o CNPJ, o nome, o município, a UF, a esfera, o e-mail e o telefone são preenchidos sozinhos com os dados públicos da Receita (só os campos vazios). O sistema também avisa se o CNPJ não está ativo ou se o órgão é federal.",
     "Relatório em PDF (menu Adesões): situação completa das adesões, com resumo, situação de cada ata (vigência, ciclo, órgãos, valor e item mais consumido), itens e saldos por ata com os órgãos aderentes, órgãos aderentes consolidados, pedidos negados, pontos de atenção, fundamentação legal e assinatura do Presidente, com o timbre do CIMOP.",
     "E-mail de resposta ao órgão: na tela do pedido, \"Revisar e enviar e-mail\" abre o texto pronto, com o ofício em Word anexo e os links do processo completo (cadastrado em \"Editar ata\"; em branco, usa a página da licitação no PNCP) e das resoluções (Configurações › E-mail e documentos). Só envia depois que você confere e clica em Enviar, e fica registrado quem enviou, quando e para quem. Rode o script 05 e publique a função consorcio-enviar-email.",
     "Cadastro do órgão com telefone. Corrigido o vocativo \"Senhor Senhor,\" quando o órgão não tem cargo cadastrado.",

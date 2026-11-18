@@ -69,6 +69,28 @@
     return input;
   }
   const telefoneValido = (v) => { const d = String(v || '').replace(/\D/g, ''); return !d || d.length === 10 || d.length === 11; };
+  // Dados públicos do CNPJ (Receita Federal) pela BrasilAPI; reserva: publica.cnpj.ws
+  const tituloPt = (t) => String(t || '').toLowerCase().replace(/(^|[\s/(-])([a-zà-ú])/g, (m, a, b) => a + b.toUpperCase()).replace(/\b(De|Da|Do|Das|Dos|E)\b/g, (m) => m.toLowerCase());
+  async function consultarReceita(cnpj) {
+    let j = null;
+    try { const r = await fetch('https://brasilapi.com.br/api/cnpj/v1/' + cnpj); if (r.ok) j = await r.json(); } catch (e) {}
+    if (!j) {
+      try {
+        const r = await fetch('https://publica.cnpj.ws/cnpj/' + cnpj);
+        if (r.ok) { const x = await r.json(), e = x.estabelecimento || {};
+          j = { razao_social: x.razao_social, natureza_juridica: x.natureza_juridica && x.natureza_juridica.descricao, municipio: e.cidade && e.cidade.nome, uf: e.estado && e.estado.sigla,
+            email: e.email, ddd_telefone_1: (e.ddd1 || '') + (e.telefone1 || ''), descricao_situacao_cadastral: e.situacao_cadastral }; }
+      } catch (e) {}
+    }
+    if (!j || !j.razao_social) return null;
+    const nat = String(j.natureza_juridica || '');
+    const esfera = /munic/i.test(nat) ? 'Municipal' : /estad|distrito federal/i.test(nat) ? 'Estadual' : /federal|uni[aã]o/i.test(nat) ? 'Federal' : /cons[oó]rcio/i.test(nat) ? 'Consórcio' : 'Outro';
+    const mun = tituloPt(j.municipio), uf = String(j.uf || '').toUpperCase();
+    const ehMunicipio = /^munic[ií]pio\b/i.test(nat) || /^munic[ií]pio de\b/i.test(j.razao_social);
+    return { nome: ehMunicipio && mun ? 'Município de ' + mun + '/' + uf : tituloPt(j.razao_social), municipio: mun, uf, esfera,
+      email: String(j.email || '').toLowerCase() || '', telefone: formatarTelefone(String(j.ddd_telefone_1 || '').replace(/\D/g, '').slice(0, 11)),
+      situacao: String(j.descricao_situacao_cadastral || '') };
+  }
   function ocupado(btn, texto) {
     if (texto) { btn.dataset.orig = btn.textContent; btn.textContent = texto; btn.disabled = true; }
     else { btn.textContent = btn.dataset.orig || btn.textContent; btn.disabled = false; }
@@ -1170,15 +1192,57 @@
     } finally { estado.ciclos = salvo; }
   }
 
+  function dadosResumido(opc) {
+    const b = estado.base, cf = b.config;
+    const vigente = (a) => a.ativo !== false && (!a.vigencia_fim || diasAte(a.vigencia_fim) >= 0);
+    const atas = new Set(b.atas.filter((a) => opc.escopo === 'todas' ? true : opc.escopo === 'vigentes' ? vigente(a) : a.id === opc.escopo).map((a) => a.id));
+    const grupos = new Map();
+    for (const p of b.pedidos) {
+      if (p.situacao === 'cancelado') continue;
+      for (const l of linhasDoPedido(p)) {
+        if (l.decisao !== 'autorizado' || !atas.has(l.ata.id)) continue;
+        const k = p.id + '|' + l.ata.id;
+        const g = grupos.get(k) || { p, ata: l.ata, valor: 0 };
+        if (l.item.preco_unitario != null) g.valor += l.qAut * l.item.preco_unitario;
+        grupos.set(k, g);
+      }
+    }
+    const linhas = [...grupos.values()].sort((x, y) => (x.p.data_oficio || '').localeCompare(y.p.data_oficio || '') || ordOficio(x.p) - ordOficio(y.p) || x.ata.numero.localeCompare(y.ata.numero)).map((g) => {
+      const o = b.orgaosPorId[g.p.orgao_id];
+      return { data: R.dataBR(g.p.data_oficio) || 'não informada', oficio: g.p.numero_oficio || 's/n', orgao: o.nome, local: [o.municipio, o.uf].filter(Boolean).join('/') || '—',
+        arp: g.ata.numero, pregao: g.ata.pregao || '—', contratado: g.ata.detentora || '—', valor: g.valor, orgaoId: o.id, ataId: g.ata.id };
+    });
+    const porAta = [...new Set(linhas.map((l) => l.ataId))].map((id) => { const ls = linhas.filter((l) => l.ataId === id), a = b.atasPorId[id];
+      return { arp: a.numero, contratado: a.detentora || '—', adesoes: ls.length, orgaos: new Set(ls.map((l) => l.orgaoId)).size, valor: ls.reduce((s, l) => s + l.valor, 0) }; })
+      .sort((x, y) => x.arp.slice(-4).localeCompare(y.arp.slice(-4)) || x.arp.localeCompare(y.arp));
+    const nomeAta = b.atasPorId[opc.escopo] ? 'ARP ' + b.atasPorId[opc.escopo].numero : null;
+    return { sigla: cf.sigla, usuario: estado.usuario.nome, dataBR: R.dataBR(hoje()), escopo: nomeAta || (opc.escopo === 'todas' ? 'Todas as atas' : 'Atas vigentes'),
+      geradoEm: new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      linhas, porAta, semData: linhas.filter((l) => l.data === 'não informada').length, total: linhas.reduce((s, l) => s + l.valor, 0), qtdOrgaos: new Set(linhas.map((l) => l.orgaoId)).size, moeda: R.moeda };
+  }
+
   TELAS.relatorio = (c) => {
     const b = estado.base;
     const f = {
       escopo: sel([['vigentes', 'Atas vigentes'], ['todas', 'Todas as atas cadastradas'], ...b.atas.map((a) => [a.id, 'Só a ARP ' + a.numero + ' – ' + (a.detentora || '')])], 'vigentes'),
-      detalhe: el('input', { type: 'checkbox', checked: true }), todos: el('input', { type: 'checkbox' }), negados: el('input', { type: 'checkbox', checked: true }) };
+      detalhe: el('input', { type: 'checkbox', checked: true }), todos: el('input', { type: 'checkbox' }), negados: el('input', { type: 'checkbox', checked: true }),
+      tipo: sel([['resumido', 'Resumido: relação de todas as adesões'], ['completo', 'Completo: situação das atas, saldos e órgãos']], 'resumido') };
+    const opcCompleto = el('div', null,
+      el('label', { class: 'checkbox' }, f.detalhe, ' Incluir itens e saldos de cada ata'),
+      el('label', { class: 'checkbox' }, f.todos, ' Mostrar também os itens sem adesão'),
+      el('label', { class: 'checkbox' }, f.negados, ' Incluir pedidos negados ou autorizados em parte'));
+    const ajustar = () => { opcCompleto.hidden = f.tipo.value !== 'completo'; };
+    f.tipo.addEventListener('change', ajustar);
     const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Gerar relatório em PDF');
     btn.addEventListener('click', async () => {
       ocupado(btn, 'Gerando o PDF…');
       try {
+        if (f.tipo.value === 'resumido') {
+          const r = dadosResumido({ escopo: f.escopo.value });
+          if (!r.linhas.length) { toast('Nenhuma adesão nesse filtro.', true); return; }
+          await baixar('Relação de Adesões - ' + (b.config.sigla || 'CIMOP') + ' - ' + hoje().split('-').reverse().join('-') + '.pdf', await window.RELATORIO.gerarResumido(r), 'application/pdf');
+          toast('Relatório gerado.'); return;
+        }
         const d = dadosRelatorio({ escopo: f.escopo.value, detalhe: f.detalhe.checked, todosItens: f.todos.checked, negados: f.negados.checked });
         if (!d.atas.length) { toast('Nenhuma ata nesse filtro.', true); return; }
         const blob = await window.RELATORIO.gerar(d);
@@ -1188,19 +1252,19 @@
       } catch (e) { console.error(e); toast(e.message, true); } finally { ocupado(btn); }
     });
     rc(c, cabecalho('Relatório em PDF', 'Situação completa das adesões, pronta para imprimir, anexar a processos ou apresentar à assembleia.', btn),
-      el('section', { class: 'cartao' }, el('h2', null, 'O que vai no relatório'),
+      el('section', { class: 'cartao' }, el('h2', null, 'O que vai no relatório completo'),
         el('ul', { class: 'lista-relatorio' },
           el('li', null, el('strong', null, 'Resumo: '), 'atas, órgãos aderentes, itens negados e valor autorizado.'),
           el('li', null, el('strong', null, 'Situação das atas: '), 'contratado, vigência, ciclo de quantitativos, órgãos, valor e o item mais consumido.'),
           el('li', null, el('strong', null, 'Itens e saldos por ata: '), 'registrado, limite total (dobro), aderido, saldo e uso, com os órgãos de cada ata.'),
           el('li', null, el('strong', null, 'Órgãos aderentes, pedidos negados e pontos de atenção'), ' (vencimentos, itens perto do dobro e excessos).'),
           el('li', null, 'Fundamentação legal (art. 86 da Lei nº 14.133/2021) e assinatura do Presidente.')),
-        el('div', { class: 'grade-campos mt-1' }, campo('rl-escopo', 'Atas', f.escopo)),
-        el('label', { class: 'checkbox' }, f.detalhe, ' Incluir itens e saldos de cada ata'),
-        el('label', { class: 'checkbox' }, f.todos, ' Mostrar também os itens sem adesão'),
-        el('label', { class: 'checkbox' }, f.negados, ' Incluir pedidos negados ou autorizados em parte'),
+        el('p', { class: 'ajuda' }, 'O resumido é uma tabela única com todas as adesões autorizadas: data da autorização, ofício, órgão, município, ata, contratado e valor total, com o total geral e um resumo por ata.'),
+        el('div', { class: 'grade-campos mt-1' }, campo('rl-tipo', 'Tipo de relatório', f.tipo), campo('rl-escopo', 'Atas', f.escopo)),
+        opcCompleto,
         el('p', { class: 'ajuda mt-05' }, 'Os números consideram o ciclo vigente de cada ata (depois de uma prorrogação com renovação dos quantitativos, só as adesões do novo período).'),
         el('div', { class: 'mt-1' }, el('button', { type: 'button', class: 'btn btn-primario', onclick: () => btn.click() }, 'Gerar relatório em PDF'))));
+    ajustar();
   };
 
   // ================================================================= ATUALIZAÇÕES DO PNCP
@@ -1452,7 +1516,15 @@
         if (r.orgao) {
           for (const k of ['nome', 'municipio', 'uf', 'esfera', 'responsavel', 'cargo', 'email']) if (r.orgao[k] && !f[k].value) { f[k].value = r.orgao[k]; sol.orgao[k] = r.orgao[k]; }
           rc(fichaOrg, el('p', { class: 'msg msg-ok' }, 'Órgão já cadastrado: ', el('strong', null, r.orgao.nome), '. Confira os dados abaixo. O saldo de cada item já considera as adesões anteriores deste CNPJ.'));
-        } else rc(fichaOrg, el('p', { class: 'msg msg-info' }, 'Primeiro pedido deste CNPJ. Preencha os dados do órgão.'));
+        } else {
+          rc(fichaOrg, el('p', { class: 'msg msg-info' }, 'Primeiro pedido deste CNPJ. Buscando os dados na Receita Federal…'));
+          const rf = await consultarReceita(n);
+          if (rf) {
+            for (const k of ['nome', 'municipio', 'uf', 'esfera', 'email', 'telefone']) if (rf[k] && f[k] && !f[k].value.trim()) { f[k].value = rf[k]; sol.orgao[k] = rf[k]; }
+            rc(fichaOrg, el('p', { class: 'msg msg-ok' }, 'Dados preenchidos pela Receita Federal: ', el('strong', null, rf.nome), '. Confira, corrija se precisar e informe o responsável.'),
+              rf.situacao && !/ativa/i.test(rf.situacao) ? el('p', { class: 'msg msg-falta' }, 'Atenção: a situação cadastral deste CNPJ na Receita é "' + rf.situacao + '".') : null);
+          } else rc(fichaOrg, el('p', { class: 'msg msg-info' }, 'Primeiro pedido deste CNPJ. Preencha os dados do órgão.'));
+        }
       } catch (e) { rc(fichaOrg, el('p', { class: 'msg msg-erro' }, e.message)); }
       desenharItens();
     }
@@ -1616,10 +1688,23 @@
       telefone: mascaraTelefone(txt(o.telefone, { maxlength: 15, inputmode: 'tel', placeholder: '(84) 99999-9999' })),
       ativo: el('input', { type: 'checkbox', checked: o.ativo !== false }) };
     f.cnpj.addEventListener('input', () => { const n = f.cnpj.value.replace(/\D/g, '').slice(0, 14); f.cnpj.value = n.length === 14 ? O.formatarCnpj(n) : n; });
+    const avisoRf = el('div');
+    const buscarRf = async () => {
+      const n = f.cnpj.value.replace(/\D/g, ''); if (n.length !== 14) { toast('Digite os 14 números do CNPJ.', true); return; }
+      rc(avisoRf, el('p', { class: 'ajuda' }, 'Consultando a Receita Federal…'));
+      const rf = await consultarReceita(n);
+      if (!rf) { rc(avisoRf, el('p', { class: 'msg msg-falta' }, 'Não foi possível consultar agora. Preencha manualmente.')); return; }
+      for (const k of ['nome', 'municipio', 'uf', 'esfera', 'email', 'telefone']) if (rf[k] && f[k] && (!f[k].value.trim() || (k === 'esfera' && !o.id))) f[k].value = rf[k];
+      rc(avisoRf, el('p', { class: 'msg msg-ok' }, 'Preenchido pela Receita Federal (só os campos vazios). Confira.'),
+        rf.esfera === 'Federal' ? el('p', { class: 'msg msg-erro' }, 'Órgão federal: adesão vedada (art. 86, § 8º, da Lei nº 14.133/2021).') : null,
+        rf.situacao && !/ativa/i.test(rf.situacao) ? el('p', { class: 'msg msg-falta' }, 'Situação cadastral na Receita: ' + rf.situacao + '.') : null);
+    };
+    if (!o.id) f.cnpj.addEventListener('input', () => { if (f.cnpj.value.replace(/\D/g, '').length === 14 && !f.nome.value.trim()) buscarRf(); });
     const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar');
     const d = abrirDialogo(o.id ? 'Editar órgão' : 'Novo órgão', el('div', null,
       campo('fo-nome', 'Nome (como sai no ofício)', f.nome, 'Ex.: Município de Riacho da Cruz/RN · Fundo Municipal de Saúde de …', true),
       el('div', { class: 'grade-campos' }, campo('fo-cnpj', 'CNPJ', f.cnpj, null, true), campo('fo-esfera', 'Esfera', f.esfera, 'Federal: adesão vedada (art. 86, § 8º).')),
+      el('div', null, el('button', { type: 'button', class: 'link', onclick: buscarRf }, 'Buscar dados na Receita Federal'), avisoRf),
       el('div', { class: 'grade-campos' }, campo('fo-mun', 'Município', f.municipio), campo('fo-uf', 'UF', f.uf)),
       el('div', { class: 'secao-form' }, el('h3', null, 'Destinatário do ofício'),
         el('div', { class: 'grade-campos' }, campo('fo-trat', 'Tratamento', f.tratamento), campo('fo-resp', 'Nome do responsável', f.responsavel)),
