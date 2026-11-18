@@ -1300,7 +1300,8 @@
 
   // ---------------------------------------------------------------- órgãos do PNCP × adesões autorizadas
   function chaveOrgao(nome, uf) {
-    let n = normalizar(nome).replace(/\/[a-z]{2}$/, '').replace(/^(municipio|prefeitura municipal|prefeitura) de /, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+    // sem espaços: "Arco Verde" e "Arcoverde" batem
+    let n = normalizar(nome).replace(/\/[a-z]{2}$/, '').replace(/^(municipio|prefeitura municipal|prefeitura) d[eao]s? /, '').replace(/[^a-z0-9]/g, '');
     return n + '|' + String(uf || '').toLowerCase();
   }
   function conferenciaPncp() {
