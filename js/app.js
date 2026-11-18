@@ -51,6 +51,24 @@
   const txt = (v, extra) => el('input', Object.assign({ type: 'text', value: v ?? '' }, extra || {}));
   const area = (v, extra) => { const t = el('textarea', Object.assign({ rows: 3 }, extra || {})); t.value = v ?? ''; return t; };
   const sel = (opcoes, atual, extra) => el('select', extra || null, opcoes.map(([v, t]) => el('option', { value: v, selected: String(atual ?? '') === String(v) }, t)));
+  // Telefone: (84) 99999-9999 ou (84) 3333-3333
+  function formatarTelefone(v) {
+    let d = String(v || '').replace(/\D/g, '');
+    if (d.length > 11 && d.startsWith('0')) d = d.replace(/^0+/, '');
+    if (d.length > 11 && d.startsWith('55')) d = d.slice(2);
+    d = d.slice(0, 11);
+    if (d.length <= 2) return d.length ? '(' + d : '';
+    const ddd = d.slice(0, 2), r = d.slice(2);
+    if (r.length <= 4) return '(' + ddd + ') ' + r;
+    const corte = r.length === 9 ? 5 : 4;
+    return '(' + ddd + ') ' + r.slice(0, corte) + '-' + r.slice(corte);
+  }
+  function mascaraTelefone(input) {
+    input.value = formatarTelefone(input.value);
+    input.addEventListener('input', () => { input.value = formatarTelefone(input.value); });
+    return input;
+  }
+  const telefoneValido = (v) => { const d = String(v || '').replace(/\D/g, ''); return !d || d.length === 10 || d.length === 11; };
   function ocupado(btn, texto) {
     if (texto) { btn.dataset.orig = btn.textContent; btn.textContent = texto; btn.disabled = true; }
     else { btn.textContent = btn.dataset.orig || btn.textContent; btn.disabled = false; }
@@ -885,39 +903,39 @@
       }
       const t = normalizar(est.busca);
       const linhas = itens.filter((i) => (!est.soComAdesao || consumo(i.id).tot > 0) && (!t || normalizar(i.numero + ' ' + i.descricao).includes(t)));
-      const totCol = colunas.map(() => 0);
-      const corpo = linhas.map((i) => {
-        const cons = consumo(i.id), lim = i.qtd_registrada * 0.5, uso = cons.tot / (2 * i.qtd_registrada) * 100;
-        return el('tr', null,
-          el('th', { scope: 'row', class: 'mapa-item' }, el('div', { class: 'mapa-item-linha' },
-            el('span', { class: 'mapa-num' }, i.numero), el('span', { class: 'mapa-desc', title: i.descricao }, i.descricao),
-            el('a', { class: 'btn-aderentes', href: '#item-' + i.id, title: 'Ver os órgãos que aderiram ao item ' + i.numero, 'aria-label': 'Ver os ' + Object.keys(cons.porOrg).length + ' órgãos que aderiram ao item ' + i.numero },
-              Object.keys(cons.porOrg).length + ' órgão(s) ›'))),
-          el('td', { class: 'num' }, R.num(i.qtd_registrada, 2), el('span', { class: 'sub-linha' }, i.unidade || '')),
-          el('td', { class: 'num mapa-total' }, R.num(cons.tot, 2)),
-          el('td', null, barraUso(uso)),
-          colunas.map((col, k) => {
-            const v = col.peds.reduce((s, p) => s + ((qtd[p.id] || {})[i.id] || 0), 0);
-            if (!v) return el('td', { class: 'mapa-cel vazia' }, '');
-            if (i.preco_unitario != null) totCol[k] += v * i.preco_unitario;
-            const somaOrg = cons.porOrg[col.orgao.id] || 0, pct = somaOrg / lim * 100;
-            return el('td', { class: 'mapa-cel ' + corUso(pct), title: col.orgao.nome + '\n' + col.sub + '\nNeste item: ' + R.num(v, 2) + ' ' + (i.unidade || '') + '\nSoma do órgão: ' + R.num(somaOrg, 2) + ' = ' + R.num(pct, 0) + '% do limite de 50%' },
-              el('span', { class: 'mapa-v' }, R.num(v, 2)),
-              el('span', { class: 'mapa-uso' }, el('span', { class: 'mapa-trilho' }, el('i', { style: 'width:' + Math.min(100, pct) + '%' })), el('span', { class: 'mapa-p' }, R.num(pct, 0) + '%')));
-          }));
+      // Valor autorizado por coluna (órgão ou ofício)
+      const valCol = colunas.map((col) => itens.reduce((s, i) => s + (i.preco_unitario != null ? col.peds.reduce((t, p) => t + ((qtd[p.id] || {})[i.id] || 0), 0) * i.preco_unitario : 0), 0));
+      const cartoes = linhas.map((i) => {
+        const cons = consumo(i.id), lim = i.qtd_registrada * 0.5, dobro = 2 * i.qtd_registrada, uso = cons.tot / dobro * 100;
+        const un = i.unidade || '';
+        const pills = colunas.map((col) => {
+          const v = col.peds.reduce((s, p) => s + ((qtd[p.id] || {})[i.id] || 0), 0);
+          if (!v) return null;
+          const somaOrg = cons.porOrg[col.orgao.id] || 0, pct = somaOrg / lim * 100;
+          return el('a', { class: 'mapa-pill ' + corUso(pct), href: col.peds.length === 1 ? '#pedido-' + col.peds[0].id : '#item-' + i.id,
+            title: col.orgao.nome + '\n' + col.sub + '\nNeste item: ' + R.num(v, 2) + ' ' + un + '\nSoma do órgão no item: ' + R.num(somaOrg, 2) + ' = ' + R.num(pct, 0) + '% do limite de 50% (' + R.num(lim, 2) + ')' },
+            el('span', { class: 'mapa-pill-nome' }, col.titulo),
+            el('span', { class: 'mapa-pill-sub' }, est.modo === 'orgao' ? col.peds.map((p) => 'Of. ' + (p.numero_oficio || 's/n')).join(' · ') : col.sub),
+            el('span', { class: 'mapa-pill-v' }, R.num(v, 2), el('small', null, ' ' + un)),
+            el('span', { class: 'mapa-pill-uso' }, el('span', { class: 'mapa-trilho' }, el('i', { style: 'width:' + Math.min(100, pct) + '%' })), el('small', null, R.num(pct, 0) + '% dos 50%')));
+        }).filter(Boolean);
+        return el('article', { class: 'mapa-linha' },
+          el('div', { class: 'mapa-linha-topo' },
+            el('span', { class: 'mapa-num' }, i.numero),
+            el('div', { class: 'mapa-linha-desc' }, el('strong', null, i.descricao), el('span', { class: 'sub-linha' }, 'Registrado: ' + R.num(i.qtd_registrada, 2) + ' ' + un + ' · limite por órgão (50%): ' + R.num(lim, 2) + ' · limite total (dobro): ' + R.num(dobro, 2))),
+            el('div', { class: 'mapa-linha-uso' },
+              el('span', { class: 'rotulo' }, 'Aderido'), el('strong', null, R.num(cons.tot, 2), el('small', null, ' de ' + R.num(dobro, 2))), barraUso(uso)),
+            el('a', { class: 'btn-aderentes', href: '#item-' + i.id, title: 'Ver os órgãos que aderiram ao item ' + i.numero }, Object.keys(cons.porOrg).length + ' órgão(s) ›')),
+          pills.length ? el('div', { class: 'mapa-pills' }, pills) : el('p', { class: 'ajuda m-0' }, 'Nenhuma adesão neste item.'));
       });
-      const tabelaMapa = el('div', { class: 'tabela-caixa mapa-caixa', 'data-sem-paginas': '1' }, el('table', { class: 'tabela tabela-mapa' },
-        el('thead', null, el('tr', null,
-          el('th', { scope: 'col', class: 'mapa-item' }, 'Item'), el('th', { scope: 'col', class: 'num' }, 'Registrado'), el('th', { scope: 'col', class: 'num' }, 'Aderido'), el('th', { scope: 'col' }, 'Uso do dobro'),
-          colunas.map((col) => el('th', { scope: 'col', class: 'mapa-col' },
-            el('a', { class: 'mapa-col-nome', href: col.peds.length === 1 ? '#pedido-' + col.peds[0].id : '#pedidos', title: col.orgao.nome }, col.titulo),
-            est.modo === 'orgao'
-              ? el('span', { class: 'mapa-col-oficios' }, col.peds.map((p) => el('a', { href: '#pedido-' + p.id, class: 'mapa-chip', title: 'Ofício nº ' + (p.numero_oficio || 's/n') }, p.numero_oficio || 's/n')))
-              : el('span', { class: 'mapa-col-oficios' }, el('span', { class: 'mapa-chip mapa-chip-org' }, col.sub)))))),
-        el('tbody', null, corpo.length ? corpo : el('tr', null, el('td', { colspan: 4 + colunas.length, class: 'vazio' }, 'Nenhum item com esses filtros.'))),
-        colunas.length && totCol.some((v) => v) ? el('tfoot', null, el('tr', null, el('th', { scope: 'row', class: 'mapa-item' }, 'Valor autorizado', el('span', { class: 'sub-linha' }, 'itens com preço informado')),
-          el('td', null), el('td', { class: 'mapa-valor mapa-valor-total' }, el('span', null, 'R$'), R.moeda(totCol.reduce((x, y) => x + y, 0))), el('td', null),
-          totCol.map((v) => el('td', { class: 'mapa-valor' }, v ? [el('span', null, 'R$'), R.moeda(v)] : '—')))) : null));
+      const ordem = colunas.map((col, k) => ({ col, v: valCol[k] })).sort((x, y) => y.v - x.v);
+      const totalValor = valCol.reduce((x, y) => x + y, 0);
+      const resumoValor = colunas.length ? el('section', { class: 'mapa-valores' }, el('h3', null, 'Valor autorizado ' + (est.modo === 'orgao' ? 'por órgão' : 'por ofício')),
+        tabela([est.modo === 'orgao' ? 'Órgão' : 'Ofício', est.modo === 'orgao' ? 'Ofícios' : 'Órgão', 'Valor autorizado', 'Participação'], ordem.map(({ col, v }) => el('tr', null,
+          el('td', null, el('strong', null, col.titulo)), el('td', null, est.modo === 'orgao' ? col.peds.map((p) => el('a', { href: '#pedido-' + p.id, class: 'mapa-chip' }, p.numero_oficio || 's/n')) : col.sub),
+          el('td', { class: 'num' }, v ? 'R$ ' + R.moeda(v) : '—'), el('td', null, barraUso(totalValor ? v / totalValor * 100 : 0)))).concat(
+          el('tr', { class: 'linha-total' }, el('td', null, el('strong', null, 'Total')), el('td', null), el('td', { class: 'num' }, el('strong', null, 'R$ ' + R.moeda(totalValor))), el('td', null))))) : null;
+      const tabelaMapa = el('div', { class: 'mapa-lista' }, cartoes.length ? cartoes : el('p', { class: 'vazio' }, 'Nenhum item com esses filtros.'), resumoValor);
       const botao = (modo, rot) => el('button', { type: 'button', class: 'aba-p', role: 'tab', 'aria-selected': est.modo === modo ? 'true' : 'false', onclick: () => { est.modo = modo; desenhar(); } }, rot);
       const busca = el('input', { type: 'search', class: 'busca', placeholder: 'Filtrar itens', value: est.busca, 'aria-label': 'Filtrar itens' });
       busca.addEventListener('input', () => { est.busca = busca.value; clearTimeout(busca._t); busca._t = setTimeout(() => { desenhar(); const n = caixa.querySelector('input.busca'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250); });
@@ -927,10 +945,10 @@
         el('div', { class: 'mapa-barra' },
           el('div', { class: 'abas-internas', role: 'tablist', 'aria-label': 'Colunas do mapa' }, botao('orgao', 'Por órgão (' + new Set(peds.map((p) => p.orgao_id)).size + ')'), botao('oficio', 'Por ofício (' + peds.length + ')')),
           busca, el('label', { class: 'checkbox' }, so, ' Só itens com adesão'),
-          el('div', { class: 'mapa-legenda', 'aria-label': 'Legenda: uso do limite de 50% do órgão no item' }, el('span', null, 'Uso dos 50% do órgão:'),
+          el('div', { class: 'mapa-legenda', 'aria-label': 'Legenda: uso do limite de 50% do órgão no item' }, el('span', null, 'Uso do limite de 50% do órgão:'),
             el('i', { class: 'uso-baixo' }, 'até 50%'), el('i', { class: 'uso-medio' }, '50–80%'), el('i', { class: 'uso-alto' }, '80–100%'), el('i', { class: 'uso-excedido' }, 'acima'))),
         peds.length ? tabelaMapa : el('p', { class: 'vazio' }, 'Nenhuma adesão autorizada nesta ata.'),
-        peds.length ? el('p', { class: 'ajuda mt-05' }, 'Passe o mouse numa célula para ver o detalhe. ' + (est.modo === 'orgao' ? 'Cada coluna soma todos os ofícios do órgão.' : 'Cada coluna é um ofício.')) : null);
+        peds.length ? el('p', { class: 'ajuda mt-05' }, 'Cada cartão mostra a quantidade autorizada e quanto o órgão já usou do seu limite de 50% no item. ' + (est.modo === 'orgao' ? 'Os ofícios do mesmo órgão aparecem somados.' : 'Cada cartão é um ofício.') + ' Clique para abrir o ofício.') : null);
     }
     desenhar();
     return caixa;
@@ -1154,7 +1172,7 @@
       el('div', { class: 'grade grade-2' },
         el('section', { class: 'cartao' }, el('h2', null, 'Órgão solicitante'),
           el('dl', { class: 'dados' }, el('dt', null, 'Órgão'), el('dd', null, x.orgao_nome), el('dt', null, 'CNPJ'), el('dd', null, O.formatarCnpj(x.cnpj)), el('dt', null, 'Esfera'), el('dd', null, x.esfera || '—'),
-            el('dt', null, 'Responsável'), el('dd', null, [x.responsavel, x.cargo].filter(Boolean).join(' · ') || '—'), el('dt', null, 'Contato'), el('dd', null, [x.email, x.telefone].filter(Boolean).join(' · ')))),
+            el('dt', null, 'Responsável'), el('dd', null, [x.responsavel, x.cargo].filter(Boolean).join(' · ') || '—'), el('dt', null, 'Contato'), el('dd', null, [x.email, x.telefone && formatarTelefone(x.telefone)].filter(Boolean).join(' · ')))),
         el('section', { class: 'cartao' }, el('h2', null, 'Pedido'),
           el('dl', { class: 'dados' }, el('dt', null, 'Situação'), el('dd', null, etiquetaSol(x.situacao)), el('dt', null, 'Ofício do órgão'), el('dd', null, (x.oficio_numero || '—') + (x.oficio_data ? ', de ' + R.dataBR(x.oficio_data) : '')),
             el('dt', null, 'Finalidade'), el('dd', null, x.finalidade || '—'), el('dt', null, 'Recebida em'), el('dd', null, new Date(x.criado_em).toLocaleString('pt-BR')),
@@ -1218,7 +1236,7 @@
       nome: txt(sol.orgao.nome, { placeholder: 'Município de …/UF', maxlength: 160 }), municipio: txt(sol.orgao.municipio, { maxlength: 80 }),
       uf: sel([['', 'UF'], ...UFS.map((u) => [u, u])], sol.orgao.uf || ''), esfera: sel(['Municipal', 'Estadual', 'Consórcio', 'Outro'].map((e) => [e, e]), sol.orgao.esfera || 'Municipal'),
       responsavel: txt(sol.orgao.responsavel, { maxlength: 120 }), cargo: txt(sol.orgao.cargo, { maxlength: 120, placeholder: 'Prefeito Municipal' }),
-      email: txt(sol.orgao.email, { type: 'email', maxlength: 120 }), telefone: txt(sol.orgao.telefone, { maxlength: 30, inputmode: 'tel' }) };
+      email: txt(sol.orgao.email, { type: 'email', maxlength: 120 }), telefone: mascaraTelefone(txt(sol.orgao.telefone, { maxlength: 15, inputmode: 'tel', placeholder: '(84) 99999-9999', autocomplete: 'tel' })) };
     Object.entries(f).forEach(([k, i]) => i.addEventListener('input', () => (sol.orgao[k] = i.value)));
     Object.entries(f).forEach(([k, i]) => i.addEventListener('change', () => (sol.orgao[k] = i.value)));
     const blocoDados = el('div', null,
@@ -1297,6 +1315,7 @@
       if (!marcarErro(fCnpj, sol.cnpj.length === 14 ? '' : 'Informe o CNPJ (14 números).')) return;
       for (const [k, i] of Object.entries({ nome: f.nome, municipio: f.municipio, uf: f.uf, responsavel: f.responsavel, cargo: f.cargo })) if (!marcarErro(i, i.value.trim() ? '' : 'Obrigatório.')) return;
       if (!marcarErro(f.email, /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.value.trim()) ? '' : 'E-mail inválido.')) return;
+      if (!marcarErro(f.telefone, telefoneValido(f.telefone.value) ? '' : 'Telefone incompleto: informe o DDD e o número, como (84) 99999-9999.')) return;
       const ls = itensEscolhidos();
       if (!ls.length) { rc(msgEnvio, el('p', { class: 'msg msg-erro' }, 'Escolha a ata e informe a quantidade de pelo menos um item.')); selAta.focus(); return; }
       const acima = ls.filter((l) => l.qtd > disp(itensPorId[l.item_id]) + 1e-9);
