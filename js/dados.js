@@ -169,7 +169,7 @@
 
   // ===================== SUPABASE =====================
   function criarSupabase() {
-    const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
+    const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, { db: { schema: CFG.SCHEMA || 'consorcio' }, auth: { storageKey: 'sb-gestao-consorcio' } });
     const ok = ({ data, error }) => { if (error) throw new Error(traduzir(error)); return data; };
     const traduzir = (e) => {
       const m = e.message || String(e);
@@ -252,7 +252,7 @@
         const lista = [];
         for (const a of arquivos) {
           const nome = a.arquivo.name.normalize('NFD').replace(/[^\w.\-]+/g, '_');
-          const { error } = await sb.storage.from('solicitacoes').upload(pasta + nome, a.arquivo, { contentType: 'application/pdf', upsert: false });
+          const { error } = await sb.storage.from('consorcio-solicitacoes').upload(pasta + nome, a.arquivo, { contentType: 'application/pdf', upsert: false });
           if (error) throw new Error('Não foi possível enviar o arquivo ' + a.arquivo.name + ': ' + error.message);
           lista.push({ tipo: a.tipo, nome: a.arquivo.name, caminho: pasta + nome, tamanho: a.arquivo.size });
         }
@@ -260,10 +260,10 @@
       },
       async consultarSolicitacao(protocolo, cnpj) { return ok(await sb.rpc('consultar_solicitacao', { p_protocolo: protocolo, p_cnpj: cnpj })); },
       async atualizarSolicitacao(id, campos) { ok(await sb.from('solicitacoes').update({ ...campos, atualizado_em: new Date().toISOString() }).eq('id', id)); },
-      async urlArquivo(caminho) { const { data } = await sb.storage.from('solicitacoes').createSignedUrl(caminho, 600); return data && data.signedUrl; },
+      async urlArquivo(caminho) { const { data } = await sb.storage.from('consorcio-solicitacoes').createSignedUrl(caminho, 600); return data && data.signedUrl; },
       async usuarios() { return ok(await sb.from('usuarios').select('*').order('nome')); },
       async criarUsuario(u) {
-        const { data, error } = await sb.functions.invoke('convidar-usuario', { body: u });
+        const { data, error } = await sb.functions.invoke('consorcio-convidar-usuario', { body: u });
         if (error) throw new Error((data && data.erro) || error.message);
         if (data && data.erro) throw new Error(data.erro);
         return data;

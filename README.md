@@ -24,16 +24,20 @@ Segue o manual de padrões SOFT+ (mesmo visual e componentes do painel do Portal
 | `js/planilhas.js` | Planilha-modelo de importação e mapa em Excel |
 | `js/dados.js` | Acesso ao Supabase (ou modo demonstração, se `js/config.js` estiver em branco) |
 | `supabase/NN_*.sql` | Scripts do banco, reexecutáveis, rodar em ordem |
-| `supabase/functions/convidar-usuario` | Edge Function que cria usuários |
+| `supabase/functions/consorcio-convidar-usuario` | Edge Function que cria usuários |
 | `versao.json` | Versão e notas (fonte única da versão) |
 
 ## Publicação
 
-1. Supabase (região São Paulo): rodar `supabase/01_estrutura.sql` e `supabase/02_solicitacoes.sql` no SQL Editor.
-2. Criar o primeiro login em Authentication › Users e rodar o `insert` comentado no fim do script 01.
-3. Publicar a Edge Function `convidar-usuario` com "Verify JWT" desligado.
-4. Preencher `js/config.js` com a URL e a chave pública (anon/publishable) do projeto. Nunca a chave secreta.
-5. Cloudflare Pages ligado a este repositório (sem build; diretório raiz).
+Usa o **mesmo projeto Supabase do Portal PNTP** (SOFT+), com tudo no schema **`consorcio`** (separado do schema `public` do portal). Sem custo adicional.
+
+1. SQL Editor: rodar `supabase/01_estrutura.sql` e depois `supabase/02_solicitacoes.sql` (reexecutáveis).
+2. Settings › API (Data API) › Exposed schemas: incluir `consorcio`.
+3. Dar acesso de administrador: rodar o `insert` comentado no fim do script 01 (o login pode ser o mesmo do portal).
+4. Publicar a Edge Function `consorcio-convidar-usuario` com "Verify JWT" desligado.
+5. `js/config.js` já aponta para o projeto (URL e chave pública). Nunca a chave secreta.
+6. Authentication › URL Configuration: incluir o endereço do sistema em Redirect URLs (para "Esqueci minha senha").
+7. Cloudflare Pages ligado a este repositório (sem build; diretório raiz).
 
 Com `js/config.js` em branco o sistema abre em **modo demonstração** (dados só no navegador).
 
