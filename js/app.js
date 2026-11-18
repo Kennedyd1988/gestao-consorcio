@@ -1,0 +1,1287 @@
+// =====================================================================
+// SOFT+ GOV · Controle de Adesões às Atas de Registro de Preços (CIMOP)
+// Núcleo do painel no padrão SOFT+ (mesmas peças do painel do Portal PNTP).
+// =====================================================================
+(function () {
+  'use strict';
+  const D = window.DADOS, R = window.REGRAS, O = window.OFICIO, PL = window.PLANILHAS;
+  const $ = (id) => document.getElementById(id);
+  const estado = { base: null, usuario: null };
+
+  // ---------------------------------------------------------------- utilidades (padrão SOFT+)
+  function el(tag, attrs, ...filhos) {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v === null || v === undefined || v === false) continue;
+      if (k === 'class') e.className = v;
+      else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+      else if (k === 'value') e.value = v;
+      else e.setAttribute(k, v === true ? '' : v);
+    }
+    for (const f of filhos.flat(Infinity)) {
+      if (f === null || f === undefined || f === false) continue;
+      e.append(f instanceof Node ? f : document.createTextNode(String(f)));
+    }
+    return e;
+  }
+  const rc = (no, ...filhos) => no.replaceChildren(...filhos.flat(Infinity).filter((x) => x !== null && x !== undefined && x !== false));
+  const mostrarTela = (id) => { for (const t of document.querySelectorAll('.tela')) t.hidden = t.id !== id; };
+  function toast(texto, erro) {
+    const t = $('toast');
+    const janela = [...document.querySelectorAll('dialog[open]')].pop();
+    if (t.parentElement !== (janela || document.body)) (janela || document.body).append(t);
+    t.textContent = texto; t.classList.toggle('erro', !!erro); t.hidden = false;
+    clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), 5000);
+  }
+  function msg(id, texto, tipo) { const m = $(id); if (!texto) { m.hidden = true; return; } m.textContent = texto; m.className = 'msg msg-' + (tipo || 'erro'); m.hidden = false; }
+  function marcarErro(input, texto) {
+    input.classList.toggle('invalido', !!texto);
+    input.setAttribute('aria-invalid', texto ? 'true' : 'false');
+    const span = input.id && document.getElementById(input.id + '-erro');
+    if (span) span.textContent = texto || '';
+    if (texto) input.focus();
+    return !texto;
+  }
+  function campo(id, rotulo, input, ajuda, obrigatorio) {
+    input.id = id;
+    return el('div', { class: 'campo' },
+      el('label', { for: id }, rotulo, obrigatorio ? el('span', { class: 'obrigatorio', 'aria-hidden': 'true' }, ' *') : null),
+      input, ajuda ? el('span', { class: 'ajuda', id: id + '-ajuda' }, ajuda) : null, el('span', { class: 'erro-campo', id: id + '-erro' }));
+  }
+  const txt = (v, extra) => el('input', Object.assign({ type: 'text', value: v ?? '' }, extra || {}));
+  const area = (v, extra) => { const t = el('textarea', Object.assign({ rows: 3 }, extra || {})); t.value = v ?? ''; return t; };
+  const sel = (opcoes, atual, extra) => el('select', extra || null, opcoes.map(([v, t]) => el('option', { value: v, selected: String(atual ?? '') === String(v) }, t)));
+  function ocupado(btn, texto) {
+    if (texto) { btn.dataset.orig = btn.textContent; btn.textContent = texto; btn.disabled = true; }
+    else { btn.textContent = btn.dataset.orig || btn.textContent; btn.disabled = false; }
+  }
+  function abrirDialogo(titulo, corpo, acoes, largo) {
+    const d = el('dialog', { class: 'dialogo' + (largo ? ' dialogo-largo' : ''), 'aria-label': titulo },
+      el('div', { class: 'dialogo-topo' }, el('h2', null, titulo), el('button', { type: 'button', class: 'dialogo-fechar', 'aria-label': 'Fechar', onclick: () => d.close() }, '×')),
+      el('div', { class: 'dialogo-corpo' }, corpo), el('div', { class: 'dialogo-acoes' }, acoes || []));
+    d.addEventListener('close', () => { const t = $('toast'); if (d.contains(t)) document.body.append(t); d.remove(); });
+    document.body.append(d); d.showModal(); return d;
+  }
+  function confirmar(titulo, texto, rotuloOk, perigo) {
+    return new Promise((ok) => {
+      let r = false;
+      const b = el('button', { type: 'button', class: 'btn ' + (perigo ? 'btn-perigo' : 'btn-primario') }, rotuloOk || 'Confirmar');
+      const d = abrirDialogo(titulo, typeof texto === 'string' ? el('p', null, texto) : texto, [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), b]);
+      b.addEventListener('click', () => { r = true; d.close(); });
+      d.addEventListener('close', () => ok(r));
+    });
+  }
+  // Abas no estilo guia de navegador (mesmo componente do painel PNTP)
+  function abas(lista, inicial) {
+    const botoes = [], paineis = [];
+    let atual = null;
+    const ir = (id, focar) => {
+      const k = lista.findIndex((x) => x[0] === id); if (k < 0) return;
+      atual = id;
+      lista.forEach((x, n) => {
+        const s = n === k;
+        botoes[n].setAttribute('aria-selected', s ? 'true' : 'false'); botoes[n].tabIndex = s ? 0 : -1; paineis[n].hidden = !s;
+        if (s && typeof x[2] === 'function' && !paineis[n]._montado) { paineis[n]._montado = true; paineis[n].replaceChildren(...[].concat(x[2]()).filter(Boolean)); }
+      });
+      if (focar) botoes[k].focus();
+    };
+    lista.forEach(([id, rotulo, conteudo]) => {
+      botoes.push(el('button', { type: 'button', role: 'tab', class: 'aba', id: 'aba-' + id, 'aria-controls': 'painel-' + id, onclick: () => ir(id) }, rotulo));
+      paineis.push(el('div', { role: 'tabpanel', id: 'painel-' + id, 'aria-labelledby': 'aba-' + id, 'data-aba-painel': id, hidden: true }, typeof conteudo === 'function' ? null : conteudo));
+    });
+    const barra = el('div', { class: 'abas abas-janela', role: 'tablist' }, botoes);
+    barra.addEventListener('keydown', (e) => {
+      const ids = lista.map((x) => x[0]); const i = ids.indexOf(atual);
+      const n = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? ids.length - 1 : null;
+      if (n === null) return; e.preventDefault(); ir(ids[(n + ids.length) % ids.length], true);
+    });
+    const caixa = el('div', { class: 'janela-abas' }, barra, el('div', { class: 'painel-guia' }, paineis));
+    caixa.ir = ir;
+    ir(inicial && lista.some((x) => x[0] === inicial) ? inicial : lista[0][0]);
+    return caixa;
+  }
+  // Paginação automática das listagens (25 por página), igual ao painel PNTP
+  const POR_PAGINA = 25;
+  function paginarTabela(caixa) {
+    const corpo = caixa.querySelector('tbody'); if (!corpo || caixa.dataset.semPaginas) return;
+    const linhas = [...corpo.children];
+    let nav = caixa.nextElementSibling && caixa.nextElementSibling.classList.contains('paginacao') ? caixa.nextElementSibling : null;
+    const paginas = Math.ceil(linhas.length / POR_PAGINA);
+    if (paginas <= 1) { linhas.forEach((l) => (l.hidden = false)); if (nav) nav.remove(); return; }
+    const mostrar = (n, rolar) => {
+      caixa.dataset.pagina = n;
+      linhas.forEach((l, k) => (l.hidden = Math.floor(k / POR_PAGINA) + 1 !== n));
+      const botao = (rot, alvo, extra) => el('button', Object.assign({ type: 'button', class: 'pag-btn', disabled: alvo < 1 || alvo > paginas || (alvo === n && typeof rot !== 'number') ? true : null,
+        'aria-current': typeof rot === 'number' && alvo === n ? 'page' : null, onclick: () => mostrar(alvo, true) }, extra || {}), String(rot));
+      const nums = [];
+      for (let i = 1; i <= paginas; i++) {
+        if (i === 1 || i === paginas || Math.abs(i - n) <= 2) nums.push(botao(i, i));
+        else if (nums.length && nums[nums.length - 1].textContent !== '…') nums.push(el('span', { class: 'pag-reticencias' }, '…'));
+      }
+      const novo = el('nav', { class: 'paginacao', 'aria-label': 'Páginas da lista' }, botao('‹', n - 1, { 'aria-label': 'Página anterior' }), nums, botao('›', n + 1, { 'aria-label': 'Próxima página' }),
+        el('span', { class: 'ajuda pag-info' }, 'Linhas ' + ((n - 1) * POR_PAGINA + 1) + '–' + Math.min(n * POR_PAGINA, linhas.length) + ' de ' + linhas.length));
+      if (nav) nav.replaceWith(novo); else caixa.after(novo);
+      nav = novo;
+      if (rolar) caixa.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    };
+    mostrar(Math.min(Number(caixa.dataset.pagina || 1), paginas), false);
+  }
+  const paginarTudo = (c) => c.querySelectorAll('.tabela-caixa').forEach(paginarTabela);
+
+  // Download: na página publicada usa o navegador; na prévia (claude.ai) usa a capacidade "downloads".
+  async function baixar(nome, dados, tipo) {
+    const blob = dados instanceof Blob ? dados : new Blob([dados], { type: tipo || 'application/octet-stream' });
+    try {
+      if (window.claude && window.claude.use) {
+        const dl = await window.claude.use('downloads');
+        if (dl) { await dl.save({ filename: nome, data: blob }); return true; }
+      }
+    } catch (e) { if (e && e.code === 'declined') return false; }
+    const a = el('a', { href: URL.createObjectURL(blob), download: nome });
+    document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+    return true;
+  }
+  const UFS = 'AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO'.split(' ');
+  const XLSX_T = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  const normalizar = D.normalizar;
+  const ordOficio = (p) => { const m = String(p.numero_oficio || '').match(/(\d+)\/(\d{4})/); return m ? Number(m[2]) * 10000 + Number(m[1]) : 0; };
+  const hoje = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+  const diasAte = (d) => Math.round((new Date(d + 'T12:00:00') - new Date(hoje() + 'T12:00:00')) / 86400000);
+  const podeEditar = () => ['administrador', 'operador'].includes(estado.usuario && estado.usuario.perfil);
+  const eAdmin = () => estado.usuario && estado.usuario.perfil === 'administrador';
+  const NOME_PERFIL = { administrador: 'Administrador', operador: 'Operador', consulta: 'Consulta' };
+  const SIT = { autorizado: ['Autorizado', 'etiqueta-autorizado'], parcial: ['Autorizado em parte', 'etiqueta-parcial'], negado: ['Negado', 'etiqueta-negado'], cancelado: ['Cancelado', 'etiqueta-cancelado'] };
+  const etiquetaSit = (s) => el('span', { class: 'etiqueta ' + SIT[s][1] }, SIT[s][0]);
+  const cabecalho = (titulo, sub, ...botoes) => el('div', { class: 'cabecalho-modulo' }, el('div', null, el('h1', null, titulo), sub ? el('p', { class: 'sub' }, sub) : null), botoes.length ? el('div', { class: 'botoes-cabecalho' }, botoes) : null);
+  const tabela = (cab, linhas, extra) => el('div', Object.assign({ class: 'tabela-caixa' }, extra || {}), el('table', { class: 'tabela' + ((extra && extra.classeTabela) ? ' ' + extra.classeTabela : '') },
+    el('thead', null, el('tr', null, cab.map((t) => (t instanceof Node ? t : el('th', { scope: 'col', class: /^(Qtd|Registrado|Valor|Saldo|Limite|Aderido|Já|Preço|Itens|Adesões|Total)/.test(t) ? 'num' : null }, t))))),
+    el('tbody', null, linhas)));
+  function barraUso(pct, rot) {
+    const p = Math.max(0, Math.min(100, pct));
+    return el('div', { class: 'barra-uso' + (pct >= 100 ? ' critico' : pct >= 80 ? ' alerta' : '') }, el('span', { class: 'barra-pntp', role: 'img', 'aria-label': rot || R.num(pct, 1) + '%' }, el('span', { style: 'width:' + p + '%' })), el('small', null, R.num(pct, 0) + '%'));
+  }
+  function etiquetaVigencia(a) {
+    if (!a.vigencia_fim) return el('span', { class: 'etiqueta etiqueta-pendente' }, 'Vigência não informada');
+    const d = diasAte(a.vigencia_fim);
+    if (d < 0) return el('span', { class: 'etiqueta etiqueta-desativado' }, 'Vencida em ' + R.dataBR(a.vigencia_fim));
+    if (d <= 60) return el('span', { class: 'etiqueta etiqueta-pendente' }, 'Vence em ' + d + ' dia(s) · ' + R.dataBR(a.vigencia_fim));
+    return el('span', { class: 'etiqueta etiqueta-ativo' }, 'Vigente até ' + R.dataBR(a.vigencia_fim));
+  }
+
+  // ---------------------------------------------------------------- cálculos sobre a base
+  function consumo(itemId, ignorar) {
+    const b = estado.base; let tot = 0; const porOrg = {};
+    for (const pi of b.pedido_itens) {
+      if (pi.item_id !== itemId || pi.decisao !== 'autorizado') continue;
+      const p = b.pedidosPorId[pi.pedido_id]; if (!p || p.situacao === 'cancelado' || p.id === ignorar) continue;
+      tot += Number(pi.qtd_autorizada); porOrg[p.orgao_id] = (porOrg[p.orgao_id] || 0) + Number(pi.qtd_autorizada);
+    }
+    return { tot, porOrg };
+  }
+  function resumoAta(a) {
+    const itens = estado.base.itens.filter((i) => i.ata_id === a.id);
+    let maior = 0, valor = 0;
+    for (const i of itens) { const c = consumo(i.id).tot; maior = Math.max(maior, c / (2 * i.qtd_registrada) * 100); if (i.preco_unitario != null) valor += c * i.preco_unitario; }
+    const peds = new Set(estado.base.pedido_itens.filter((pi) => itens.some((i) => i.id === pi.item_id) && pi.decisao === 'autorizado').map((pi) => pi.pedido_id));
+    const ativos = [...peds].filter((id) => estado.base.pedidosPorId[id] && estado.base.pedidosPorId[id].situacao !== 'cancelado');
+    return { itens, maior, valor, adesoes: ativos.length };
+  }
+  function linhasDoPedido(p) {
+    const b = estado.base;
+    return b.pedido_itens.filter((pi) => pi.pedido_id === p.id).map((pi) => {
+      const item = b.itensPorId[pi.item_id], ata = b.atasPorId[item.ata_id], reg = Number(item.qtd_registrada);
+      const uo = pi.usado_orgao_antes != null ? Number(pi.usado_orgao_antes) : null, ut = pi.usado_total_antes != null ? Number(pi.usado_total_antes) : null;
+      return { pi, item, ata, decisao: pi.decisao, motivo: pi.motivo || '', q: Number(pi.qtd_solicitada), qAut: Number(pi.qtd_autorizada),
+        usadoOrgao: uo ?? 0, dispOrgao: Math.max(0, reg * 0.5 - (uo ?? 0)), dispTotal: Math.max(0, reg * 2 - (ut ?? 0)) };
+    }).sort((x, y) => x.ata.numero.localeCompare(y.ata.numero) || x.item.numero - y.item.numero);
+  }
+  const valorPedido = (p) => linhasDoPedido(p).reduce((s, l) => s + (l.decisao === 'autorizado' && l.item.preco_unitario != null ? l.qAut * l.item.preco_unitario : 0), 0);
+  const textoAnexos = (pregoes) => {
+    const t = estado.base.config.texto_anexos || '';
+    const p = pregoes.length > 1 ? 'dos Pregões Eletrônicos ' + pregoes.map((x) => 'nº ' + x).join(' e ') : 'Pregão Eletrônico nº ' + (pregoes[0] || '___');
+    return t.replace('{pregao}', p).replace('processo integral do dos', 'processo integral dos');
+  };
+  function ultimoOficio() {
+    const ano = hoje().slice(0, 4);
+    const nums = estado.base.pedidos.map((p) => String(p.numero_oficio || '').match(/^(\d+)\/(\d{4})/)).filter((m) => m && m[2] === ano).map((m) => Number(m[1]));
+    return nums.length ? Math.max(...nums) : null;
+  }
+  async function baixarOficio(p) {
+    const b = estado.base;
+    const dados = { pedido: p, orgao: b.orgaosPorId[p.orgao_id], linhas: linhasDoPedido(p), config: b.config };
+    const blob = await O.gerarDocx(dados);
+    return baixar(O.nomeArquivo(dados), blob);
+  }
+  async function recarregar() { estado.base = await D.carregar(); atualizarContadores(); }
+
+  // ---------------------------------------------------------------- login
+  for (const b of document.querySelectorAll('.btn-ver-senha')) b.addEventListener('click', () => {
+    const i = $(b.dataset.alvo); const m = i.type === 'password'; i.type = m ? 'text' : 'password'; b.textContent = m ? 'Ocultar' : 'Mostrar';
+  });
+  $('form-login').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const email = $('login-email'), senha = $('login-senha');
+    if (!marcarErro(email, /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim()) ? '' : 'Informe um e-mail válido.')) return;
+    if (!marcarErro(senha, senha.value ? '' : 'Informe a senha.')) return;
+    const btn = $('btn-entrar'); ocupado(btn, 'Entrando…'); msg('login-msg');
+    try { estado.usuario = await D.entrar(email.value.trim(), senha.value); await abrirPainel(); }
+    catch (e) { msg('login-msg', e.message); } finally { ocupado(btn); }
+  });
+  $('link-esqueci').addEventListener('click', async () => {
+    const email = $('login-email').value.trim();
+    if (!marcarErro($('login-email'), /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? '' : 'Digite seu e-mail acima e clique de novo em "Esqueci minha senha".')) return;
+    try { await D.esqueci(email); msg('login-msg', 'Enviamos um link para ' + email + ' criar uma nova senha.', 'ok'); } catch (e) { msg('login-msg', e.message); }
+  });
+  $('form-nova-senha').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const s1 = $('nova-senha'), s2 = $('nova-senha2');
+    if (!marcarErro(s1, s1.value.length >= 8 && /\d/.test(s1.value) && /\D/.test(s1.value) ? '' : 'Use pelo menos 8 caracteres, com letras e números.')) return;
+    if (!marcarErro(s2, s1.value === s2.value ? '' : 'As senhas não conferem.')) return;
+    const btn = $('btn-salvar-senha'); ocupado(btn, 'Salvando…');
+    try { await D.trocarSenha(s1.value); estado.usuario = await D.sessao(); toast('Senha salva.'); await abrirPainel(); }
+    catch (e) { msg('nova-msg', e.message); } finally { ocupado(btn); }
+  });
+  $('btn-sair').addEventListener('click', async () => { await D.sair(); estado.usuario = null; mostrarTela('tela-login'); $('form-login').hidden = false; $('form-nova-senha').hidden = true; });
+  $('btn-topo-novo').addEventListener('click', () => { location.hash = '#novo'; });
+  $('btn-menu').addEventListener('click', () => { const a = $('lateral').classList.toggle('aberta'); $('btn-menu').setAttribute('aria-expanded', a ? 'true' : 'false'); });
+  $('topo-usuario').addEventListener('click', minhaConta);
+
+  function minhaConta() {
+    const u = estado.usuario;
+    const d = abrirDialogo('Minha conta', el('div', null, el('dl', { class: 'dados' }, el('dt', null, 'Nome'), el('dd', null, u.nome), el('dt', null, 'E-mail'), el('dd', null, u.email), el('dt', null, 'Perfil'), el('dd', null, NOME_PERFIL[u.perfil]))),
+      [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => { d.close(); mostrarTela('tela-login'); $('form-login').hidden = true; $('form-nova-senha').hidden = false; } }, 'Trocar senha'),
+        el('button', { type: 'button', class: 'btn btn-primario', onclick: () => d.close() }, 'Fechar')]);
+  }
+
+  // ---------------------------------------------------------------- menu e rotas
+  const MENU = [
+    ['Adesões', [['solicitacoes', 'Solicitações recebidas'], ['novo', 'Novo pedido de adesão', () => podeEditar()], ['pedidos', 'Pedidos e ofícios']]],
+    ['Cadastros', [['atas', 'Atas de registro de preços'], ['orgaos', 'Órgãos aderentes']]],
+    ['Sistema', [['importar', 'Importar planilha', () => podeEditar()], ['configuracoes', 'Configurações do ofício', () => eAdmin()], ['usuarios', 'Usuários', () => eAdmin()]]],
+  ];
+  function montarMenu() {
+    const menu = $('menu');
+    menu.replaceChildren(el('a', { href: '#inicio', 'data-rota': 'inicio', class: 'menu-inicio' }, 'Início'));
+    for (const [grupo, itens] of MENU) {
+      const vis = itens.filter((i) => !i[2] || i[2]()); if (!vis.length) continue;
+      menu.append(el('div', { class: 'menu-bloco', role: 'group', 'aria-label': grupo }, el('span', { class: 'menu-grupo', 'aria-hidden': 'true' }, grupo.toUpperCase()),
+        vis.map(([r, n]) => el('a', { href: '#' + r, 'data-rota': r, 'data-busca': normalizar(n + ' ' + grupo) }, n, el('span', { class: 'aba-qtd', 'data-cont': r, hidden: true })))));
+    }
+    menu.append(el('p', { class: 'menu-nada', hidden: true }, 'Nenhum item com esse nome.'));
+  }
+  function atualizarContadores() {
+    const c = document.querySelector('[data-cont="pedidos"]');
+    if (c && estado.base) { const n = estado.base.pedidos.filter((p) => p.origem !== 'migracao' && p.situacao !== 'cancelado').length; c.textContent = n; c.hidden = !n; }
+    const s = document.querySelector('[data-cont="solicitacoes"]');
+    if (s && estado.base) { const n = estado.base.solicitacoes.filter((x) => x.situacao === 'recebida' || x.situacao === 'em_analise').length; s.textContent = n; s.hidden = !n; s.classList.toggle('aba-qtd-alerta', n > 0); }
+  }
+  $('menu-busca').addEventListener('input', () => {
+    const t = normalizar($('menu-busca').value.trim()); let algum = false;
+    for (const b of $('menu').querySelectorAll('.menu-bloco')) {
+      let n = 0; for (const a of b.querySelectorAll('a')) { const ok = !t || a.dataset.busca.includes(t); a.hidden = !ok; if (ok) n++; }
+      b.hidden = !n; if (n) algum = true;
+    }
+    $('menu').querySelector('.menu-nada').hidden = algum || !t;
+  });
+  $('menu').addEventListener('click', (ev) => { if (ev.target.closest('a')) { $('lateral').classList.remove('aberta'); $('btn-menu').setAttribute('aria-expanded', 'false'); } });
+
+  const TELAS = {};
+  function rotear() {
+    if (!estado.base) return;
+    const h = (location.hash || '#inicio').slice(1);
+    const [rota, ...resto] = h.split('-'); const id = resto.join('-');
+    const destaque = { pedido: 'pedidos', ata: 'atas', solicitacao: 'solicitacoes' }[rota] || rota;
+    for (const a of $('menu').querySelectorAll('a')) a.dataset.rota === destaque ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
+    const c = $('conteudo');
+    const tela = TELAS[rota] || TELAS.inicio;
+    try { tela(c, id); } catch (e) { console.error(e); rc(c, el('h1', null, 'Algo deu errado'), el('p', { class: 'msg msg-erro' }, e.message)); }
+    paginarTudo(c);
+    c.focus({ preventScroll: true }); window.scrollTo(0, 0);
+  }
+  // Formulário público (#solicitar) e consulta (#consultar) abrem sem login
+  const ehPublica = () => /^#(solicitar|consultar)/.test(location.hash);
+  window.addEventListener('hashchange', () => {
+    if (ehPublica()) { mostrarTela('tela-publica'); telaPublica(); return; }
+    if (estado.usuario) { if (!estado.painel) abrirPainel(); else { mostrarTela('tela-painel'); rotear(); } }
+    else if (!$('tela-login').hidden || !$('tela-publica').hidden) { mostrarTela('tela-login'); }
+  });
+
+  async function abrirPainel() {
+    mostrarTela('tela-carregando'); $('carregando-texto').textContent = 'Carregando atas e pedidos…';
+    if (estado.usuario.troca_senha && D.modo !== 'demo') { mostrarTela('tela-login'); $('form-login').hidden = true; $('form-nova-senha').hidden = false; return; }
+    await recarregar();
+    $('topo-usuario').textContent = estado.usuario.nome;
+    $('topo-orgao-perfil').textContent = (estado.base.config.orgao_nome || '') + ' · Seu perfil: ' + NOME_PERFIL[estado.usuario.perfil];
+    $('btn-topo-novo').hidden = !podeEditar();
+    if (D.modo === 'demo') {
+      const f = $('faixa-demo'); f.hidden = false;
+      f.replaceChildren(el('strong', null, 'Prévia de demonstração.'), ' Os dados ficam só neste navegador (histórico migrado da planilha; vigências fictícias). Nada é gravado no banco.',
+        el('a', { class: 'link', href: '#solicitar' }, 'Ver o formulário do município ↗'),
+        el('button', { type: 'button', class: 'link', onclick: async () => { if (await confirmar('Recomeçar a demonstração', 'Apaga o que você lançou nesta prévia e volta ao histórico migrado da planilha.', 'Recomeçar', true)) { estado.base = await D.reiniciarDemo(); rotear(); toast('Demonstração reiniciada.'); } } }, 'Recomeçar a demonstração'));
+    }
+    montarMenu(); atualizarContadores();
+    estado.painel = true;
+    mostrarTela('tela-painel');
+    rotear();
+  }
+
+  async function iniciar() {
+    for (const s of document.querySelectorAll('.versao-app')) s.textContent = window.VERSAO_APP || '—';
+    if (ehPublica()) { mostrarTela('tela-publica'); telaPublica(); }
+    try {
+      estado.usuario = await D.sessao();
+      if (ehPublica()) { if (estado.usuario) { await recarregar(); montarMenu(); } }
+      else if (estado.usuario) await abrirPainel(); else mostrarTela('tela-login');
+    } catch (e) { mostrarTela('tela-login'); msg('login-msg', e.message); }
+    if (D.sb) D.sb.auth.onAuthStateChange((ev) => { if (ev === 'PASSWORD_RECOVERY') { mostrarTela('tela-login'); $('form-login').hidden = true; $('form-nova-senha').hidden = false; } });
+    if ('serviceWorker' in navigator && D.modo !== 'demo') navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
+  }
+
+  // ================================================================= INÍCIO
+  TELAS.inicio = (c) => {
+    const b = estado.base, ano = hoje().slice(0, 4);
+    const vigentes = b.atas.filter((a) => a.ativo !== false && (!a.vigencia_fim || diasAte(a.vigencia_fim) >= 0));
+    const pedAno = b.pedidos.filter((p) => (p.data_oficio || '').startsWith(ano) && p.situacao !== 'cancelado');
+    const valorAno = pedAno.reduce((s, p) => s + valorPedido(p), 0);
+    const pertoLimite = b.itens.filter((i) => consumo(i.id).tot >= 1.6 * i.qtd_registrada);
+    const alertas = [];
+    for (const a of b.atas) {
+      if (!a.vigencia_fim) alertas.push(['falta', 'ARP ' + a.numero + ': vigência não informada.', a]);
+      else { const d = diasAte(a.vigencia_fim); if (d >= 0 && d <= 60) alertas.push(['falta', 'ARP ' + a.numero + ' (' + a.detentora + ') vence em ' + d + ' dia(s), em ' + R.dataBR(a.vigencia_fim) + '.', a]); }
+      const semPreco = b.itens.filter((i) => i.ata_id === a.id && (i.preco_unitario == null || i.preco_unitario === '')).length;
+      if (semPreco) alertas.push(['info', 'ARP ' + a.numero + ': ' + semPreco + ' item(ns) sem preço unitário (o valor do ofício fica em branco).', a]);
+    }
+    for (const o of R.conferirHistorico(b)) {
+      const a = b.atasPorId[o.item.ata_id];
+      alertas.unshift(['erro', o.tipo === '50%'
+        ? `${o.orgao.nome} tem ${R.num(o.valor, 2)} autorizados no item ${o.item.numero} da ARP ${a.numero} — acima do limite de 50% (${R.num(o.limite, 2)}). Se o órgão era participante da ata, registre como participante; se era adesão, avalie retificar.`
+        : `Item ${o.item.numero} da ARP ${a.numero}: total aderido ${R.num(o.valor, 2)} acima do dobro (${R.num(o.limite, 2)}).`, a]);
+    }
+    const ultimos = [...b.pedidos].filter((p) => p.origem !== 'migracao').sort((x, y) => (y.criado_em || '').localeCompare(x.criado_em || '')).slice(0, 8);
+    const nome = (estado.usuario.nome || '').split(' ')[0];
+    rc(c, 
+      cabecalho(nome ? 'Olá, ' + nome : 'Início', 'Controle de adesões às Atas de Registro de Preços do CIMOP', podeEditar() ? el('a', { class: 'btn btn-primario', href: '#novo' }, '+ Novo pedido de adesão') : null),
+      el('div', { class: 'resumo-pntp' },
+        el('div', null, el('span', { class: 'rotulo' }, 'Atas vigentes'), el('strong', { class: 'num-grande' }, vigentes.length), el('small', null, b.atas.length + ' cadastrada(s)')),
+        el('div', null, el('span', { class: 'rotulo' }, 'Pedidos em ' + ano), el('strong', { class: 'num-grande' }, pedAno.length),
+          el('small', null, pedAno.filter((p) => p.situacao !== 'negado').length + ' com autorização · ' + pedAno.filter((p) => p.situacao === 'negado').length + ' negado(s)')),
+        el('div', null, el('span', { class: 'rotulo' }, 'Itens acima de 80% do dobro'), el('strong', { class: 'num-grande' }, pertoLimite.length), el('small', null, 'de ' + b.itens.length + ' itens')),
+        el('div', null, el('span', { class: 'rotulo' }, 'Valor autorizado em ' + ano), el('strong', { class: 'num-grande' }, 'R$ ' + R.moeda(valorAno)), el('small', null, 'itens com preço informado'))),
+      alertas.length ? el('section', { class: 'cartao' }, el('h2', null, 'Pontos de atenção'),
+        el('ul', { class: 'lista-alertas' }, alertas.slice(0, 12).map(([t, texto, a]) => el('li', null, el('div', { class: 'msg msg-' + t }, el('span', null, texto), el('a', { class: 'link', href: '#ata-' + a.id }, 'Abrir ata'))))),
+        alertas.length > 12 ? el('p', { class: 'ajuda' }, '+ ' + (alertas.length - 12) + ' outro(s). Veja em Atas de registro de preços.') : null) : null,
+      el('section', { class: 'cartao' }, el('h2', null, 'Consumo das atas'),
+        el('p', { class: 'ajuda' }, 'A barra mostra o item mais consumido de cada ata em relação ao dobro do registrado (limite total das adesões).'),
+        tabela(['ARP', 'Contratado', 'Vigência', 'Itens', 'Adesões', 'Item mais consumido'], b.atas.map((a) => {
+          const r = resumoAta(a);
+          return el('tr', { class: 'clicavel', onclick: () => (location.hash = '#ata-' + a.id) },
+            el('td', null, el('a', { href: '#ata-' + a.id }, el('strong', null, a.numero)), el('span', { class: 'sub-linha' }, 'Pregão ' + a.pregao)),
+            el('td', null, a.detentora), el('td', null, etiquetaVigencia(a)), el('td', { class: 'num' }, r.itens.length), el('td', { class: 'num' }, r.adesoes), el('td', null, barraUso(r.maior)));
+        }))),
+      el('section', { class: 'cartao' }, el('h2', null, 'Últimos pedidos lançados'),
+        ultimos.length ? tabelaPedidos(ultimos) : el('p', { class: 'vazio' }, 'Nenhum pedido lançado no sistema ainda. O histórico migrado está em Pedidos e ofícios.')));
+  };
+
+  // ================================================================= NOVO PEDIDO
+  let rascunho = null;
+  const novoRascunho = () => ({ orgao_id: '', numero_oficio: '', data_oficio: hoje(), oficio_solicitante: '', data_solicitante: '', finalidade: '', anexos: true, anexos_texto: null, atas: [], qtd: {} });
+
+  TELAS.novo = (c) => {
+    if (!podeEditar()) { rc(c, cabecalho('Acesso não permitido', 'Seu perfil só consulta.')); return; }
+    const b = estado.base;
+    rascunho = rascunho || novoRascunho();
+    const r = rascunho;
+    const ult = ultimoOficio();
+
+    // --- Solicitante
+    const selOrg = sel([['', 'Escolha o órgão ou entidade…'], ...b.orgaos.filter((o) => o.ativo !== false).map((o) => [o.id, o.nome + (o.cnpj ? ' · ' + O.formatarCnpj(o.cnpj) : '')])], r.orgao_id);
+    const ficha = el('div');
+    const desenharFicha = () => {
+      const o = b.orgaosPorId[r.orgao_id];
+      if (!o) { rc(ficha, ); return; }
+      const falta = [!o.cnpj && 'CNPJ', !o.responsavel && 'responsável', !o.cargo && 'cargo'].filter(Boolean);
+      rc(ficha, el('div', { class: 'ficha-orgao' },
+        el('dl', { class: 'dados' }, el('dt', null, 'CNPJ'), el('dd', null, o.cnpj ? O.formatarCnpj(o.cnpj) : '—'), el('dt', null, 'Destinatário'), el('dd', null, [o.tratamento, o.responsavel].filter(Boolean).join(' ') || '—'),
+          el('dt', null, 'Cargo'), el('dd', null, o.cargo || '—'), el('dt', null, 'E-mail'), el('dd', null, o.email || '—'), el('dt', null, 'Esfera'), el('dd', null, o.esfera)),
+        falta.length ? el('p', { class: 'msg msg-falta mt-05' }, 'Falta ' + falta.join(', ') + ' deste órgão para o ofício sair completo. ') : null,
+        el('button', { type: 'button', class: 'link', onclick: () => formOrgao(o, () => { desenharFicha(); atualizar(); }) }, 'Editar dados do órgão')));
+    };
+    selOrg.addEventListener('change', () => { r.orgao_id = selOrg.value; desenharFicha(); atualizar(); });
+
+    // --- Ofício
+    const fNum = txt(r.numero_oficio, { placeholder: ult ? String(ult + 1).padStart(3, '0') + '/' + hoje().slice(0, 4) : '000/' + hoje().slice(0, 4), maxlength: 20, inputmode: 'numeric' });
+    const fData = el('input', { type: 'date', value: r.data_oficio });
+    const fSol = txt(r.oficio_solicitante, { placeholder: 'Ex.: 172/2026', maxlength: 40 });
+    const fDataSol = el('input', { type: 'date', value: r.data_solicitante });
+    const fFin = area(r.finalidade, { rows: 2, placeholder: 'à aquisição de insumos para a produção de massa asfáltica a frio…' });
+    const fAnexos = el('input', { type: 'checkbox', checked: r.anexos });
+    const fAnexosTxt = area('', { rows: 2 });
+    const avisoNum = el('span', { class: 'ajuda' });
+    const conferirNumero = () => {
+      const v = fNum.value.trim();
+      const dup = v && b.pedidos.find((p) => p.numero_oficio === v);
+      avisoNum.className = 'ajuda' + (dup ? ' ajuda-erro' : '');
+      avisoNum.textContent = dup ? 'Já existe o Ofício nº ' + v + ' (' + (b.orgaosPorId[dup.orgao_id] || {}).nome + ').' : ult ? 'Último número usado em ' + hoje().slice(0, 4) + ': ' + String(ult).padStart(3, '0') + '/' + hoje().slice(0, 4) + '.' : 'Número definido por vocês.';
+    };
+    fNum.addEventListener('input', () => { r.numero_oficio = fNum.value.trim(); conferirNumero(); });
+    fNum.addEventListener('blur', () => { const m = fNum.value.trim().match(/^(\d{1,4})$/); if (m) { fNum.value = m[1].padStart(3, '0') + '/' + (fData.value || hoje()).slice(0, 4); r.numero_oficio = fNum.value; conferirNumero(); } });
+    fData.addEventListener('change', () => { r.data_oficio = fData.value; atualizar(); });
+    fSol.addEventListener('input', () => (r.oficio_solicitante = fSol.value.trim()));
+    fDataSol.addEventListener('change', () => (r.data_solicitante = fDataSol.value));
+    fFin.addEventListener('input', () => (r.finalidade = fFin.value));
+    fAnexos.addEventListener('change', () => { r.anexos = fAnexos.checked; fAnexosTxt.hidden = !r.anexos; });
+    fAnexosTxt.addEventListener('input', () => (r.anexos_texto = fAnexosTxt.value));
+    fAnexosTxt.hidden = !r.anexos;
+
+    // --- Atas
+    const selAta = sel([['', 'Adicionar ata ao pedido…'], ...b.atas.filter((a) => a.ativo !== false).map((a) => [a.id, 'ARP ' + a.numero + ' · ' + a.detentora + (a.vigencia_fim && diasAte(a.vigencia_fim) < 0 ? ' (vencida)' : '')])], '');
+    const chips = el('div', { class: 'chips-atas' });
+    const grupos = el('div');
+    selAta.addEventListener('change', () => {
+      const id = selAta.value; selAta.value = '';
+      if (!id || r.atas.includes(id)) return;
+      const ata = b.atasPorId[id];
+      // Outras atas do mesmo pregão costumam vir juntas: adiciona de uma vez
+      const irmas = b.atas.filter((a) => a.pregao === ata.pregao && a.id !== id && !r.atas.includes(a.id));
+      r.atas.push(id);
+      if (irmas.length) toast('Dica: o Pregão ' + ata.pregao + ' tem também ' + irmas.map((a) => 'ARP ' + a.numero).join(', ') + '. Adicione se o pedido incluir.');
+      desenharAtas(); atualizar();
+    });
+
+    const barra = el('div', { class: 'barra-pedido' });
+    const btnPrevia = el('button', { type: 'button', class: 'btn btn-claro', onclick: () => salvar(true) }, 'Baixar prévia do ofício');
+    const btnSalvar = el('button', { type: 'button', class: 'btn btn-primario', onclick: () => salvar(false) }, 'Registrar pedido e gerar ofício');
+
+    function linhas() {
+      const out = [];
+      for (const ataId of r.atas) for (const i of b.itens.filter((x) => x.ata_id === ataId)) { const q = r.qtd[i.id]; if (q != null && q !== '' && Number(q) > 0) out.push({ item_id: i.id, qtd: Number(q) }); }
+      return out;
+    }
+    function desenharAtas() {
+      rc(chips, ...r.atas.map((id) => { const a = b.atasPorId[id]; return el('span', { class: 'chip-ata' }, 'ARP ' + a.numero, el('button', { type: 'button', 'aria-label': 'Tirar a ARP ' + a.numero + ' do pedido', onclick: () => { r.atas = r.atas.filter((x) => x !== id); b.itens.filter((i) => i.ata_id === id).forEach((i) => delete r.qtd[i.id]); desenharAtas(); atualizar(); } }, '×')); }));
+      rc(grupos, ...r.atas.map((id) => {
+        const a = b.atasPorId[id];
+        const itens = b.itens.filter((i) => i.ata_id === id);
+        const busca = el('input', { type: 'search', class: 'busca', placeholder: 'Filtrar itens desta ata', style: 'max-width:320px;height:38px', hidden: itens.length < 8 });
+        const corpo = itens.map((i) => {
+          const inp = el('input', { type: 'number', class: 'qtd', min: '0', step: 'any', inputmode: 'decimal', value: r.qtd[i.id] ?? '', 'aria-label': 'Quantidade do item ' + i.numero, 'data-item': i.id });
+          inp.addEventListener('input', () => { r.qtd[i.id] = inp.value; atualizar(); });
+          return el('tr', { 'data-linha': i.id, 'data-busca': normalizar(i.numero + ' ' + i.descricao) },
+            el('td', { class: 'num' }, i.numero), el('td', { class: 'desc' }, i.descricao), el('td', null, i.unidade || ''),
+            el('td', { class: 'num' }, R.num(i.qtd_registrada, 2)), el('td', { class: 'num', 'data-col': 'so' }), el('td', { class: 'num', 'data-col': 'st' }),
+            el('td', null, inp), el('td', { class: 'resultado', 'data-col': 'res' }));
+        });
+        busca.addEventListener('input', () => { const t = normalizar(busca.value); corpo.forEach((tr) => (tr.hidden = t && !tr.dataset.busca.includes(t) && !(r.qtd[tr.dataset.linha] > 0))); });
+        return el('div', { class: 'grupo-ata' },
+          el('h3', null, 'ARP ' + a.numero, el('span', { class: 'sub-linha' }, a.detentora + ' · Pregão ' + a.pregao), etiquetaVigencia(a)), busca,
+          el('div', { class: 'tabela-caixa', 'data-sem-paginas': '1' }, el('table', { class: 'tabela' },
+            el('thead', null, el('tr', null, ['Item', 'Descrição', 'Und.', 'Registrado', 'Disponível para o órgão', 'Saldo da ata (dobro)', 'Qtd solicitada', 'Resultado'].map((t, k) => el('th', { scope: 'col', class: k === 0 || (k >= 3 && k <= 5) ? 'num' : null }, t)))),
+            el('tbody', null, corpo))));
+      }));
+      if (!r.atas.length) rc(grupos, el('p', { class: 'vazio' }, 'Adicione a(s) ata(s) do pedido para digitar as quantidades.'));
+    }
+    function atualizar() {
+      const org = b.orgaosPorId[r.orgao_id];
+      // Saldos por item (sem as quantidades deste pedido)
+      for (const tr of grupos.querySelectorAll('tr[data-linha]')) {
+        const i = b.itensPorId[tr.dataset.linha], cons = consumo(i.id);
+        const uo = org ? cons.porOrg[org.id] || 0 : null;
+        const so = org ? Math.max(0, i.qtd_registrada * 0.5 - uo) : null, st = Math.max(0, i.qtd_registrada * 2 - cons.tot);
+        const cso = tr.querySelector('[data-col=so]');
+        rc(cso, org ? R.num(Math.min(so, st), 2) : '—', org ? el('span', { class: 'sub-linha' }, 'já aderiu ' + R.num(uo, 2) + ' de ' + R.num(i.qtd_registrada * 0.5, 2)) : el('span', { class: 'sub-linha' }, 'escolha o órgão'));
+        cso.classList.toggle('saldo-zero', !!org && Math.min(so, st) <= 0);
+        const cst = tr.querySelector('[data-col=st]'); cst.textContent = R.num(st, 2); cst.classList.toggle('saldo-zero', st <= 0);
+        tr.querySelector('[data-col=res]').replaceChildren(); tr.className = '';
+      }
+      const ls = linhas();
+      const res = org ? R.analisar(b, org, r.data_oficio, ls) : [];
+      let aut = 0, neg = 0, valor = 0;
+      res.forEach((x) => {
+        const tr = grupos.querySelector('tr[data-linha="' + x.item.id + '"]'); if (!tr) return;
+        const cel = tr.querySelector('[data-col=res]');
+        if (x.decisao === 'autorizado') {
+          aut++; if (x.item.preco_unitario != null) valor += x.q * x.item.preco_unitario;
+          tr.className = 'lin-autorizado';
+          cel.className = 'resultado ok';
+          rc(cel, el('strong', null, '✓ Autorizado'), x.item.preco_unitario != null ? 'R$ ' + R.moeda(x.q * x.item.preco_unitario) : null, x.alertas.map((t) => el('span', { class: 'alerta' }, t)));
+        } else if (x.decisao === 'negado') {
+          neg++; tr.className = 'lin-negado'; cel.className = 'resultado nao';
+          rc(cel, el('strong', null, '✕ Negado'), x.motivo, el('span', { class: 'alerta' }, 'Disponível para este órgão: ' + R.num(x.disponivel, 2)));
+        }
+      });
+      if (!org && ls.length) rc(barra, el('span', { class: 'msg msg-falta m-0' }, 'Escolha o órgão solicitante para conferir os limites.'), el('div', { class: 'botoes' }, btnPrevia, btnSalvar));
+      else rc(barra, 
+        el('div', { class: 'contagem' }, el('span', { class: 'etiqueta etiqueta-autorizado' }, aut + ' autorizado(s)'), el('span', { class: 'etiqueta etiqueta-negado' }, neg + ' negado(s)'),
+          el('span', { class: 'total' }, 'Valor autorizado: R$ ' + R.moeda(valor)),
+          res.length ? el('span', { class: 'etiqueta ' + SIT[R.situacao(res)][1] }, 'Ofício: ' + SIT[R.situacao(res)][0].toLowerCase()) : null),
+        el('div', { class: 'botoes' }, btnPrevia, btnSalvar));
+      btnSalvar.disabled = btnPrevia.disabled = !org || !ls.length;
+      // Texto padrão dos anexos acompanha os pregões escolhidos
+      if (r.anexos_texto == null || fAnexosTxt._auto) { fAnexosTxt.value = textoAnexos([...new Set(r.atas.map((id) => b.atasPorId[id].pregao))]); fAnexosTxt._auto = true; }
+      return res;
+    }
+    fAnexosTxt.addEventListener('input', () => (fAnexosTxt._auto = false));
+    if (r.anexos_texto != null) fAnexosTxt.value = r.anexos_texto;
+
+    async function salvar(previa) {
+      const org = b.orgaosPorId[r.orgao_id];
+      if (!marcarErro(selOrg, org ? '' : 'Escolha o órgão.')) return;
+      const ls = linhas(); if (!ls.length) { toast('Digite a quantidade de pelo menos um item.', true); return; }
+      const num = fNum.value.trim();
+      const pedido = { numero_oficio: num || null, data_oficio: r.data_oficio || hoje(), orgao_id: org.id, oficio_solicitante: r.oficio_solicitante || null, data_solicitante: r.data_solicitante || null,
+        finalidade: r.finalidade.trim() || null, anexos_texto: r.anexos ? fAnexosTxt.value.trim() : null };
+      if (previa) {
+        const res = R.analisar(b, org, pedido.data_oficio, ls).filter((x) => x.decisao !== 'invalido');
+        const dados = { pedido, orgao: org, linhas: res, config: b.config };
+        await baixar('PRÉVIA - ' + O.nomeArquivo(dados), await O.gerarDocx(dados)); return;
+      }
+      if (!marcarErro(fNum, num ? (b.pedidos.some((p) => p.numero_oficio === num) ? 'Esse número já foi usado.' : '') : 'Informe o número do ofício do CIMOP.')) return;
+      const res = R.analisar(b, org, pedido.data_oficio, ls);
+      const neg = res.filter((x) => x.decisao === 'negado').length;
+      const ok = await confirmar('Registrar o pedido', el('div', null,
+        el('p', null, 'Ofício nº ', el('strong', null, num), ' para ', el('strong', null, org.nome), '.'),
+        el('p', null, res.length - neg + ' item(ns) autorizado(s) e ' + neg + ' negado(s). O saldo das atas é atualizado e o ofício em Word é baixado em seguida.'),
+        neg ? el('p', { class: 'msg msg-falta' }, 'Itens negados entram no ofício com o motivo e o saldo disponível.') : null), 'Registrar e gerar ofício');
+      if (!ok) return;
+      ocupado(btnSalvar, 'Registrando…');
+      try {
+        const id = await D.registrarPedido({ ...pedido, itens: ls });
+        if (r.solicitacao_id) await D.atualizarSolicitacao(r.solicitacao_id, { situacao: 'atendida', pedido_id: id, orgao_id: org.id });
+        await recarregar();
+        const p = estado.base.pedidosPorId[id];
+        rascunho = null;
+        toast('Pedido registrado: ' + SIT[p.situacao][0].toLowerCase() + '. Gerando o ofício…');
+        location.hash = '#pedido-' + id;
+        await baixarOficio(p);
+      } catch (e) { toast(e.message, true); ocupado(btnSalvar); }
+    }
+
+    const solOrigem = r.solicitacao_id && b.solicitacoes.find((x) => x.id === r.solicitacao_id);
+    rc(c, 
+      cabecalho('Novo pedido de adesão', 'Digite as quantidades pedidas: o sistema confere os limites na hora e gera o ofício ao registrar.',
+        el('button', { type: 'button', class: 'btn btn-claro', onclick: async () => { if (await confirmar('Limpar o formulário', 'Apaga o que foi digitado neste pedido.', 'Limpar', true)) { rascunho = null; rotear(); } } }, 'Limpar')),
+      solOrigem ? el('p', { class: 'msg msg-info' }, 'Lançando a solicitação ', el('strong', null, solOrigem.protocolo), ' recebida pelo formulário online. Confira as quantidades, informe o nº do ofício e registre: a solicitação fica como atendida.') : null,
+      el('div', { class: 'grade grade-2' },
+        el('section', { class: 'cartao' }, el('h2', null, 'Solicitante'),
+          campo('np-orgao', 'Órgão ou entidade', selOrg, 'O limite de 50% é por CNPJ. Fundo, autarquia ou Câmara com CNPJ próprio é outro órgão.', true), ficha,
+          el('button', { type: 'button', class: 'btn btn-claro', onclick: () => formOrgao({}, (o) => { r.orgao_id = o.id; rotear(); }) }, '+ Cadastrar órgão novo')),
+        el('section', { class: 'cartao' }, el('h2', null, 'Ofício'),
+          el('div', { class: 'grade-campos' }, el('div', { class: 'campo' }, el('label', { for: 'np-num' }, 'Nº do ofício do CIMOP', el('span', { class: 'obrigatorio' }, ' *')), (fNum.id = 'np-num', fNum), avisoNum, el('span', { class: 'erro-campo', id: 'np-num-erro' })),
+            campo('np-data', 'Data do ofício', fData, null, true)),
+          el('div', { class: 'grade-campos' }, campo('np-sol', 'Ofício do solicitante', fSol), campo('np-datasol', 'Data do pedido', fDataSol)),
+          campo('np-fin', 'A adesão destina-se…', fFin, 'Completa a frase "A adesão destina-se …" do ofício. Opcional.'),
+          el('label', { class: 'checkbox' }, fAnexos, ' Encaminhar anexos (processo e resoluções)'), el('div', { class: 'campo campo-anexos' }, (fAnexosTxt.setAttribute('aria-label', 'Texto dos anexos'), fAnexosTxt)))),
+      el('section', { class: 'cartao' }, el('h2', null, 'Atas e quantidades'),
+        el('div', { class: 'grade-campos' }, campo('np-ata', 'Ata', selAta, 'Pode juntar várias atas no mesmo ofício.')), chips, grupos, barra));
+    conferirNumero(); desenharFicha(); desenharAtas(); atualizar();
+  };
+
+  // ================================================================= PEDIDOS
+  function tabelaPedidos(lista) {
+    const b = estado.base;
+    return tabela(['Ofício', 'Data', 'Órgão', 'Atas', 'Itens', 'Valor autorizado (R$)', 'Situação', ''], lista.map((p) => {
+      const ls = linhasDoPedido(p), o = b.orgaosPorId[p.orgao_id];
+      const atas = [...new Set(ls.map((l) => l.ata.numero))];
+      return el('tr', null,
+        el('td', null, el('a', { href: '#pedido-' + p.id }, el('strong', null, p.numero_oficio || 'sem nº'))),
+        el('td', { class: 'num' }, R.dataBR(p.data_oficio) || '—'),
+        el('td', null, o ? o.nome : '?', p.oficio_solicitante ? el('span', { class: 'sub-linha' }, 'Ofício solicitante nº ' + p.oficio_solicitante) : null),
+        el('td', null, atas.join(', ')),
+        el('td', { class: 'num' }, ls.filter((l) => l.decisao === 'autorizado').length + ' ✓' + (ls.some((l) => l.decisao === 'negado') ? ' · ' + ls.filter((l) => l.decisao === 'negado').length + ' ✕' : '')),
+        el('td', { class: 'num' }, R.moeda(valorPedido(p))),
+        el('td', null, etiquetaSit(p.situacao), p.origem === 'migracao' ? el('span', { class: 'etiqueta etiqueta-migracao ml-1' }, 'migrado') : null),
+        el('td', { class: 'acoes' }, el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: async (e) => { const bt = e.currentTarget; ocupado(bt, 'Gerando…'); try { await baixarOficio(p); } finally { ocupado(bt); } } }, 'Ofício (Word)')));
+    }));
+  }
+
+  const filtrosPedidos = { texto: '', situacao: '', ata: '', ano: '', origem: '' };
+  TELAS.pedidos = (c) => {
+    const b = estado.base, f = filtrosPedidos;
+    const anos = [...new Set(b.pedidos.map((p) => (p.data_oficio || '').slice(0, 4)).filter(Boolean))].sort().reverse();
+    const iTexto = el('input', { type: 'search', placeholder: 'Buscar por nº do ofício ou órgão', value: f.texto, 'aria-label': 'Buscar' });
+    const iSit = sel([['', 'Todas as situações'], ...Object.entries(SIT).map(([k, v]) => [k, v[0]])], f.situacao, { 'aria-label': 'Situação' });
+    const iAta = sel([['', 'Todas as atas'], ...b.atas.map((a) => [a.id, 'ARP ' + a.numero])], f.ata, { 'aria-label': 'Ata' });
+    const iAno = sel([['', 'Todos os anos'], ...anos.map((a) => [a, a])], f.ano, { 'aria-label': 'Ano' });
+    const lista = el('div');
+    const filtrar = () => {
+      Object.assign(f, { texto: iTexto.value, situacao: iSit.value, ata: iAta.value, ano: iAno.value });
+      const t = normalizar(f.texto);
+      const res = b.pedidos.filter((p) => {
+        const o = b.orgaosPorId[p.orgao_id];
+        if (t && !normalizar((p.numero_oficio || '') + ' ' + (o ? o.nome + ' ' + (o.cnpj || '') : '') + ' ' + (p.oficio_solicitante || '')).includes(t)) return false;
+        if (f.situacao && p.situacao !== f.situacao) return false;
+        if (f.ano && !(p.data_oficio || '').startsWith(f.ano)) return false;
+        if (f.ata && !b.pedido_itens.some((pi) => pi.pedido_id === p.id && b.itensPorId[pi.item_id].ata_id === f.ata)) return false;
+        return true;
+      }).sort((x, y) => ordOficio(y) - ordOficio(x) || (y.data_oficio || '').localeCompare(x.data_oficio || ''));
+      rc(lista, el('div', { class: 'rodape-lista' }, el('span', { class: 'ajuda' }, res.length + ' pedido(s)'),
+        el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: () => baixar('Pedidos de adesão.xlsx', PL.listaPedidos(b, res), XLSX_T) }, 'Exportar para Excel')),
+        res.length ? tabelaPedidos(res) : el('p', { class: 'vazio' }, 'Nenhum pedido com esses filtros.'));
+      paginarTudo(lista);
+    };
+    [iTexto, iSit, iAta, iAno].forEach((i) => i.addEventListener(i.tagName === 'INPUT' ? 'input' : 'change', filtrar));
+    rc(c, cabecalho('Pedidos e ofícios', 'Cada pedido gera um ofício. O Word é refeito a qualquer momento a partir do que foi registrado.', podeEditar() ? el('a', { class: 'btn btn-primario', href: '#novo' }, '+ Novo pedido') : null),
+      el('div', { class: 'filtros' }, iTexto, iSit, iAta, iAno), lista);
+    filtrar();
+  };
+
+  TELAS.pedido = (c, id) => {
+    const b = estado.base, p = b.pedidosPorId[id];
+    if (!p) { rc(c, cabecalho('Pedido não encontrado', null, el('a', { class: 'btn btn-claro', href: '#pedidos' }, 'Voltar'))); return; }
+    const o = b.orgaosPorId[p.orgao_id], ls = linhasDoPedido(p);
+    const btnWord = el('button', { type: 'button', class: 'btn btn-primario', onclick: async () => { ocupado(btnWord, 'Gerando…'); try { await baixarOficio(p); } finally { ocupado(btnWord); } } }, 'Baixar ofício (Word)');
+    const acoes = [el('a', { class: 'btn btn-claro', href: '#pedidos' }, '‹ Pedidos'), btnWord];
+    if (podeEditar() && p.situacao !== 'cancelado') {
+      acoes.splice(1, 0, el('button', { type: 'button', class: 'btn btn-claro', onclick: () => editarPedido(p) }, 'Editar dados do ofício'),
+        el('button', { type: 'button', class: 'btn btn-claro btn-texto-perigo', onclick: () => cancelarPedido(p) }, 'Cancelar pedido'));
+    }
+    rc(c, 
+      cabecalho('Ofício nº ' + (p.numero_oficio || 's/n'), o.nome, ...acoes),
+      p.situacao === 'cancelado' ? el('p', { class: 'msg msg-erro' }, 'Pedido cancelado: ' + (p.motivo_cancelamento || '') + ' O saldo voltou para as atas.') : null,
+      p.origem === 'migracao' ? el('p', { class: 'msg msg-info' }, 'Pedido migrado da planilha antiga: as quantidades foram gravadas como autorizadas na época, sem nova conferência.') : null,
+      el('div', { class: 'grade grade-2' },
+        el('section', { class: 'cartao' }, el('h2', null, 'Dados do pedido'),
+          el('dl', { class: 'dados' },
+            el('dt', null, 'Situação'), el('dd', null, etiquetaSit(p.situacao)),
+            el('dt', null, 'Data do ofício'), el('dd', null, R.dataBR(p.data_oficio) || '—'),
+            el('dt', null, 'Ofício do solicitante'), el('dd', null, p.oficio_solicitante ? p.oficio_solicitante + (p.data_solicitante ? ', de ' + R.dataBR(p.data_solicitante) : '') : '—'),
+            el('dt', null, 'Finalidade'), el('dd', null, p.finalidade || '—'),
+            el('dt', null, 'Lançado por'), el('dd', null, (p.criado_por_nome || '—') + (p.criado_em ? ' em ' + new Date(p.criado_em).toLocaleString('pt-BR') : '')))),
+        el('section', { class: 'cartao' }, el('h2', null, 'Destinatário'),
+          el('dl', { class: 'dados' }, el('dt', null, 'Órgão'), el('dd', null, o.nome), el('dt', null, 'CNPJ'), el('dd', null, o.cnpj ? O.formatarCnpj(o.cnpj) : '—'),
+            el('dt', null, 'Responsável'), el('dd', null, o.responsavel || '—'), el('dt', null, 'Cargo'), el('dd', null, o.cargo || '—'), el('dt', null, 'E-mail'), el('dd', null, o.email || '—')),
+          podeEditar() ? el('button', { type: 'button', class: 'link', onclick: () => formOrgao(o, () => rotear()) }, 'Editar órgão') : null)),
+      el('section', { class: 'cartao' }, el('h2', null, 'Itens'),
+        tabela(['ARP', 'Item', 'Descrição', 'Und.', 'Qtd solicitada', 'Qtd autorizada', 'Preço unit. (R$)', 'Valor (R$)', 'Decisão'], ls.map((l) => el('tr', { class: 'lin-' + l.decisao },
+          el('td', null, l.ata.numero), el('td', { class: 'num' }, l.item.numero), el('td', { class: 'desc' }, l.item.descricao), el('td', null, l.item.unidade || ''),
+          el('td', { class: 'num' }, R.num(l.q, 2)), el('td', { class: 'num' }, R.num(l.qAut, 2)), el('td', { class: 'num' }, R.moeda(l.item.preco_unitario)),
+          el('td', { class: 'num' }, l.item.preco_unitario != null ? R.moeda(l.qAut * l.item.preco_unitario) : '—'),
+          el('td', { class: 'resultado ' + (l.decisao === 'autorizado' ? 'ok' : 'nao') }, el('strong', null, l.decisao === 'autorizado' ? '✓ Autorizado' : '✕ Negado'), l.motivo)))),
+        el('p', { class: 'ajuda mt-05' }, 'Valor autorizado: R$ ' + R.moeda(valorPedido(p)))));
+  };
+
+  function editarPedido(p) {
+    const f = { num: txt(p.numero_oficio, { maxlength: 20 }), data: el('input', { type: 'date', value: p.data_oficio || '' }), sol: txt(p.oficio_solicitante, { maxlength: 40 }),
+      datasol: el('input', { type: 'date', value: p.data_solicitante || '' }), fin: area(p.finalidade, { rows: 2 }), anexos: area(p.anexos_texto, { rows: 3 }) };
+    const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar');
+    const d = abrirDialogo('Editar dados do ofício', el('div', null,
+      el('p', { class: 'msg msg-info' }, 'Itens e quantidades não mudam aqui (eles definem os saldos). Para mudar quantidades, cancele o pedido e lance outro.'),
+      el('div', { class: 'grade-campos' }, campo('ep-num', 'Nº do ofício do CIMOP', f.num, null, true), campo('ep-data', 'Data do ofício', f.data)),
+      el('div', { class: 'grade-campos' }, campo('ep-sol', 'Ofício do solicitante', f.sol), campo('ep-datasol', 'Data do pedido', f.datasol)),
+      campo('ep-fin', 'A adesão destina-se…', f.fin), campo('ep-anexos', 'Texto dos anexos (em branco = sem anexos)', f.anexos)),
+      [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), btn]);
+    btn.addEventListener('click', async () => {
+      const num = f.num.value.trim();
+      if (!marcarErro(f.num, !num ? 'Informe o número.' : estado.base.pedidos.some((x) => x.id !== p.id && x.numero_oficio === num) ? 'Esse número já foi usado.' : '')) return;
+      ocupado(btn, 'Salvando…');
+      try {
+        await D.salvar('pedidos', { id: p.id, numero_oficio: num, data_oficio: f.data.value || null, oficio_solicitante: f.sol.value.trim() || null, data_solicitante: f.datasol.value || null, finalidade: f.fin.value.trim() || null, anexos_texto: f.anexos.value.trim() || null });
+        await recarregar(); d.close(); toast('Dados do ofício salvos.'); rotear();
+      } catch (e) { toast(e.message, true); ocupado(btn); }
+    });
+  }
+  function cancelarPedido(p) {
+    const m = area('', { rows: 3, placeholder: 'Ex.: o município desistiu da adesão; ofício emitido com erro…' });
+    const btn = el('button', { type: 'button', class: 'btn btn-perigo' }, 'Cancelar pedido');
+    const d = abrirDialogo('Cancelar o Ofício nº ' + (p.numero_oficio || 's/n'), el('div', null,
+      el('p', null, 'O pedido não é apagado: fica marcado como cancelado, com o motivo, e as quantidades voltam para o saldo das atas.'), campo('cp-motivo', 'Motivo', m, null, true)),
+      [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Voltar'), btn]);
+    btn.addEventListener('click', async () => {
+      if (!marcarErro(m, m.value.trim() ? '' : 'Informe o motivo.')) return;
+      ocupado(btn, 'Cancelando…');
+      try { await D.cancelarPedido(p.id, m.value.trim()); await recarregar(); d.close(); toast('Pedido cancelado. Saldo devolvido.'); rotear(); } catch (e) { toast(e.message, true); ocupado(btn); }
+    });
+  }
+
+  // ================================================================= ATAS
+  TELAS.atas = (c) => {
+    const b = estado.base;
+    rc(c, cabecalho('Atas de registro de preços', b.atas.length + ' ata(s) · ' + b.itens.length + ' itens',
+      podeEditar() ? el('a', { class: 'btn btn-claro', href: '#importar' }, 'Importar ata por planilha') : null,
+      podeEditar() ? el('button', { type: 'button', class: 'btn btn-primario', onclick: () => formAta({}) }, '+ Nova ata') : null,
+      el('button', { type: 'button', class: 'btn btn-claro', onclick: () => baixar('Mapa de adesões - todas as atas.xlsx', PL.mapa(b, b.atas), XLSX_T) }, 'Mapa de todas (Excel)')),
+      b.atas.length ? tabela(['ARP', 'Pregão', 'Contratado', 'Vigência', 'Itens', 'Adesões', 'Valor aderido (R$)', 'Item mais consumido'], b.atas.map((a) => {
+        const r = resumoAta(a);
+        return el('tr', null, el('td', null, el('a', { href: '#ata-' + a.id }, el('strong', null, a.numero))), el('td', null, a.pregao),
+          el('td', null, a.detentora, a.cnpj_detentora ? el('span', { class: 'sub-linha' }, O.formatarCnpj(a.cnpj_detentora)) : null), el('td', null, etiquetaVigencia(a)),
+          el('td', { class: 'num' }, r.itens.length), el('td', { class: 'num' }, r.adesoes), el('td', { class: 'num' }, R.moeda(r.valor)), el('td', null, barraUso(r.maior)));
+      })) : el('p', { class: 'vazio' }, 'Nenhuma ata cadastrada. Use "Importar ata por planilha".'));
+  };
+
+  TELAS.ata = (c, id) => {
+    const b = estado.base, a = b.atasPorId[id];
+    if (!a) { rc(c, cabecalho('Ata não encontrada', null, el('a', { class: 'btn btn-claro', href: '#atas' }, 'Voltar'))); return; }
+    const itens = b.itens.filter((i) => i.ata_id === id);
+    const abaItens = () => tabela(['Item', 'Descrição', 'Und.', 'Registrado', 'Preço unit. (R$)', 'Limite por órgão (50%)', 'Limite total (dobro)', 'Total aderido', 'Saldo (dobro)', 'Uso do dobro', ''], itens.map((i) => {
+      const cons = consumo(i.id), saldo = 2 * i.qtd_registrada - cons.tot;
+      return el('tr', null, el('td', { class: 'num' }, i.numero), el('td', { class: 'desc' }, i.descricao), el('td', null, i.unidade || ''), el('td', { class: 'num' }, R.num(i.qtd_registrada, 2)),
+        el('td', { class: 'num' }, i.preco_unitario != null ? R.moeda(i.preco_unitario) : el('span', { class: 'falta-leve' }, 'falta')), el('td', { class: 'num' }, R.num(i.qtd_registrada * 0.5, 2)),
+        el('td', { class: 'num' }, R.num(i.qtd_registrada * 2, 2)), el('td', { class: 'num' }, R.num(cons.tot, 2)), el('td', { class: 'num' + (saldo <= 0 ? ' saldo-zero' : '') }, R.num(saldo, 2)),
+        el('td', null, barraUso(cons.tot / (2 * i.qtd_registrada) * 100)),
+        el('td', { class: 'acoes' }, el('button', { type: 'button', class: 'link', onclick: () => detalheItem(i) }, 'Quem aderiu'), podeEditar() ? el('button', { type: 'button', class: 'link ml-1', onclick: () => formItem(a, i) }, 'Editar') : null));
+    }), { 'data-sem-paginas': '1' });
+    const abaMapa = () => mapaAdesoes(a, itens);
+    const abaDados = () => el('dl', { class: 'dados' },
+      el('dt', null, 'Pregão'), el('dd', null, a.pregao), el('dt', null, 'Processo'), el('dd', null, a.processo || '—'), el('dt', null, 'Objeto'), el('dd', null, a.objeto || '—'),
+      el('dt', null, 'Contratado'), el('dd', null, a.detentora), el('dt', null, 'CNPJ'), el('dd', null, a.cnpj_detentora ? O.formatarCnpj(a.cnpj_detentora) : '—'),
+      el('dt', null, 'Assinatura'), el('dd', null, R.dataBR(a.data_assinatura) || '—'), el('dt', null, 'Vigência'), el('dd', null, etiquetaVigencia(a), a.prorrogada ? ' (prorrogada)' : ''),
+      el('dt', null, 'Cláusulas de adesão'), el('dd', null, a.clausulas_adesao || '—'), el('dt', null, 'Observações'), el('dd', null, a.observacoes || '—'));
+    rc(c, 
+      cabecalho('ARP ' + a.numero, a.detentora + ' · Pregão ' + a.pregao, el('a', { class: 'btn btn-claro', href: '#atas' }, '‹ Atas'),
+        el('button', { type: 'button', class: 'btn btn-claro', onclick: () => baixar('Mapa de adesões - ARP ' + a.numero.replace('/', '-') + '.xlsx', PL.mapa(b, [a]), XLSX_T) }, 'Mapa (Excel)'),
+        podeEditar() ? el('button', { type: 'button', class: 'btn btn-claro', onclick: () => formItem(a, {}) }, '+ Item') : null,
+        podeEditar() ? el('button', { type: 'button', class: 'btn btn-primario', onclick: () => formAta(a) }, 'Editar ata') : null),
+      abas([['itens', 'Itens e saldos (' + itens.length + ')', abaItens], ['mapa', 'Mapa de adesões', abaMapa], ['dados', 'Dados da ata', abaDados]]));
+  };
+
+  function detalheItem(i) {
+    const b = estado.base, cons = consumo(i.id);
+    const linhas = Object.entries(cons.porOrg).sort((x, y) => y[1] - x[1]).map(([oid, v]) => el('tr', null, el('td', null, b.orgaosPorId[oid].nome), el('td', { class: 'num' }, R.num(v, 2)),
+      el('td', null, barraUso(v / (0.5 * i.qtd_registrada) * 100)), el('td', { class: 'num' }, R.num(Math.max(0, 0.5 * i.qtd_registrada - v), 2))));
+    const d = abrirDialogo('Item ' + i.numero + ' · ' + i.descricao, el('div', null,
+      el('p', { class: 'ajuda' }, 'Limite por órgão: ' + R.num(i.qtd_registrada * 0.5, 2) + ' · Limite total: ' + R.num(i.qtd_registrada * 2, 2) + ' · Aderido: ' + R.num(cons.tot, 2)),
+      linhas.length ? tabela(['Órgão', 'Aderido', 'Uso dos 50%', 'Saldo do órgão'], linhas) : el('p', { class: 'vazio' }, 'Ninguém aderiu a este item.')),
+      [el('button', { type: 'button', class: 'btn btn-primario', onclick: () => d.close() }, 'Fechar')], true);
+  }
+
+  function formAta(a) {
+    const f = { pregao: txt(a.pregao, { placeholder: '008/2025' }), numero: txt(a.numero, { placeholder: '001/2026' }), processo: txt(a.processo), objeto: area(a.objeto, { rows: 2 }),
+      detentora: txt(a.detentora), cnpj: txt(a.cnpj_detentora ? O.formatarCnpj(a.cnpj_detentora) : '', { inputmode: 'numeric', maxlength: 18 }),
+      assin: el('input', { type: 'date', value: a.data_assinatura || '' }), vig: el('input', { type: 'date', value: a.vigencia_fim || '' }),
+      prorr: el('input', { type: 'checkbox', checked: !!a.prorrogada }), clausulas: txt(a.clausulas_adesao, { placeholder: '4.1 a 4.3' }), obs: area(a.observacoes, { rows: 2 }) };
+    const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar');
+    const d = abrirDialogo(a.id ? 'Editar ARP ' + a.numero : 'Nova ata', el('div', null,
+      el('div', { class: 'grade-campos' }, campo('fa-pregao', 'Pregão', f.pregao, null, true), campo('fa-numero', 'Nº da ARP', f.numero, null, true), campo('fa-processo', 'Processo administrativo', f.processo)),
+      campo('fa-objeto', 'Objeto', f.objeto),
+      el('div', { class: 'grade-campos' }, campo('fa-det', 'Contratado (detentora do registro)', f.detentora, null, true), campo('fa-cnpj', 'CNPJ', f.cnpj)),
+      el('div', { class: 'grade-campos' }, campo('fa-assin', 'Data de assinatura', f.assin), campo('fa-vig', 'Vigência até', f.vig, 'Pedidos com data depois disto são negados.'), campo('fa-cl', 'Cláusulas de adesão', f.clausulas, 'Entra no ofício: "nos termos das cláusulas … da Ata".')),
+      el('label', { class: 'checkbox' }, f.prorr, ' Ata prorrogada'), campo('fa-obs', 'Observações', f.obs),
+      a.id ? null : el('p', { class: 'msg msg-info' }, 'Depois de salvar, inclua os itens com "+ Item" ou importe pela planilha-modelo.')),
+      [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), btn], true);
+    btn.addEventListener('click', async () => {
+      const norm = (v) => { const m = v.trim().match(/(\d+)\s*[\/-]\s*(\d{4})/); return m ? m[1].padStart(3, '0') + '/' + m[2] : v.trim(); };
+      if (!marcarErro(f.pregao, f.pregao.value.trim() ? '' : 'Informe o pregão.')) return;
+      const numero = norm(f.numero.value);
+      if (!marcarErro(f.numero, !/^\d{3,}\/\d{4}$/.test(numero) ? 'Use o formato 001/2026.' : estado.base.atas.some((x) => x.numero === numero && x.id !== a.id) ? 'Já existe essa ARP.' : '')) return;
+      if (!marcarErro(f.detentora, f.detentora.value.trim() ? '' : 'Informe o contratado.')) return;
+      const cnpj = f.cnpj.value.replace(/\D/g, '');
+      if (!marcarErro(f.cnpj, cnpj && cnpj.length !== 14 ? 'CNPJ com 14 números.' : '')) return;
+      ocupado(btn, 'Salvando…');
+      try {
+        const s = await D.salvar('atas', { ...(a.id ? { id: a.id } : {}), pregao: norm(f.pregao.value), numero, processo: f.processo.value.trim() || null, objeto: f.objeto.value.trim() || null,
+          detentora: f.detentora.value.trim(), cnpj_detentora: cnpj || null, data_assinatura: f.assin.value || null, vigencia_fim: f.vig.value || null, prorrogada: f.prorr.checked,
+          clausulas_adesao: f.clausulas.value.trim() || null, observacoes: f.obs.value.trim() || null });
+        await recarregar(); d.close(); toast('Ata salva.'); location.hash = '#ata-' + s.id; rotear();
+      } catch (e) { toast(e.message, true); ocupado(btn); }
+    });
+  }
+
+  function formItem(a, i) {
+    const usado = i.id ? consumo(i.id).tot : 0;
+    const f = { numero: el('input', { type: 'number', min: '1', value: i.numero ?? (Math.max(0, ...estado.base.itens.filter((x) => x.ata_id === a.id).map((x) => x.numero)) + 1) }),
+      descricao: area(i.descricao, { rows: 2 }), unidade: txt(i.unidade, { maxlength: 20 }), qtd: el('input', { type: 'number', min: '0', step: 'any', value: i.qtd_registrada ?? '' }),
+      preco: el('input', { type: 'number', min: '0', step: 'any', value: i.preco_unitario ?? '' }) };
+    const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar');
+    const d = abrirDialogo((i.id ? 'Editar item ' + i.numero : 'Novo item') + ' · ARP ' + a.numero, el('div', null,
+      el('div', { class: 'grade-campos' }, campo('fi-num', 'Nº do item', f.numero, null, true), campo('fi-und', 'Unidade', f.unidade)),
+      campo('fi-desc', 'Descrição', f.descricao, null, true),
+      el('div', { class: 'grade-campos' }, campo('fi-qtd', 'Quantidade registrada', f.qtd, 'Gerenciador + participantes. Os limites saem daqui.', true), campo('fi-preco', 'Preço unitário (R$)', f.preco)),
+      usado ? el('p', { class: 'msg msg-falta' }, 'Este item já tem ' + R.num(usado, 2) + ' aderidos. Mudar a quantidade registrada muda os limites de todos os órgãos.') : null),
+      [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), btn]);
+    btn.addEventListener('click', async () => {
+      const n = Number(f.numero.value), q = Number(f.qtd.value);
+      if (!marcarErro(f.numero, n > 0 ? (estado.base.itens.some((x) => x.ata_id === a.id && x.numero === n && x.id !== i.id) ? 'Já existe esse item nesta ata.' : '') : 'Informe o número.')) return;
+      if (!marcarErro(f.descricao, f.descricao.value.trim() ? '' : 'Informe a descrição.')) return;
+      if (!marcarErro(f.qtd, q > 0 ? (q * 2 < usado ? 'O total aderido (' + R.num(usado, 2) + ') passaria do dobro.' : '') : 'Informe a quantidade.')) return;
+      ocupado(btn, 'Salvando…');
+      try {
+        await D.salvar('itens', { ...(i.id ? { id: i.id } : {}), ata_id: a.id, numero: n, descricao: f.descricao.value.trim(), unidade: f.unidade.value.trim() || null, qtd_registrada: q, preco_unitario: f.preco.value === '' ? null : Number(f.preco.value) });
+        await recarregar(); d.close(); toast('Item salvo.'); rotear();
+      } catch (e) { toast(e.message, true); ocupado(btn); }
+    });
+  }
+
+
+  // ---------------------------------------------------------------- mapa de adesões (item × órgão)
+  const nomeCurto = (n) => String(n || '').replace(/^Munic[ií]pio de\s+/i, '').replace(/^Prefeitura Municipal de\s+/i, '');
+  function corUso(pct) { return pct > 100 ? 'uso-excedido' : pct >= 80 ? 'uso-alto' : pct >= 50 ? 'uso-medio' : 'uso-baixo'; }
+  function mapaAdesoes(a, itens) {
+    const b = estado.base;
+    const est = mapaAdesoes.estado || (mapaAdesoes.estado = { modo: 'orgao', soComAdesao: true, busca: '' });
+    const caixa = el('div', { class: 'mapa' });
+    // Pedidos válidos da ata e o que cada um autorizou por item
+    const peds = b.pedidos.filter((p) => p.situacao !== 'cancelado' && b.pedido_itens.some((pi) => pi.pedido_id === p.id && pi.decisao === 'autorizado' && itens.some((i) => i.id === pi.item_id)))
+      .sort((x, y) => ordOficio(x) - ordOficio(y));
+    const qtd = {}; // qtd[pedidoId][itemId]
+    for (const pi of b.pedido_itens) if (pi.decisao === 'autorizado' && peds.some((p) => p.id === pi.pedido_id)) { (qtd[pi.pedido_id] = qtd[pi.pedido_id] || {})[pi.item_id] = (qtd[pi.pedido_id][pi.item_id] || 0) + Number(pi.qtd_autorizada); }
+    function desenhar() {
+      // Colunas: um órgão (somando seus ofícios) ou um ofício
+      let colunas;
+      if (est.modo === 'orgao') {
+        const porOrg = new Map();
+        for (const p of peds) { if (!porOrg.has(p.orgao_id)) porOrg.set(p.orgao_id, []); porOrg.get(p.orgao_id).push(p); }
+        colunas = [...porOrg.entries()].map(([oid, ps]) => ({ orgao: b.orgaosPorId[oid], peds: ps, titulo: nomeCurto(b.orgaosPorId[oid].nome), sub: ps.map((p) => 'Of. ' + (p.numero_oficio || 's/n')).join(' · ') }))
+          .sort((x, y) => x.titulo.localeCompare(y.titulo, 'pt-BR'));
+      } else {
+        colunas = peds.map((p) => ({ orgao: b.orgaosPorId[p.orgao_id], peds: [p], titulo: 'Of. ' + (p.numero_oficio || 's/n'), sub: nomeCurto(b.orgaosPorId[p.orgao_id].nome) }));
+      }
+      const t = normalizar(est.busca);
+      const linhas = itens.filter((i) => (!est.soComAdesao || consumo(i.id).tot > 0) && (!t || normalizar(i.numero + ' ' + i.descricao).includes(t)));
+      const totCol = colunas.map(() => 0);
+      const corpo = linhas.map((i) => {
+        const cons = consumo(i.id), lim = i.qtd_registrada * 0.5, uso = cons.tot / (2 * i.qtd_registrada) * 100;
+        return el('tr', null,
+          el('th', { scope: 'row', class: 'mapa-item' }, el('span', { class: 'mapa-num' }, i.numero), el('span', { class: 'mapa-desc', title: i.descricao }, i.descricao)),
+          el('td', { class: 'num' }, R.num(i.qtd_registrada, 2), el('span', { class: 'sub-linha' }, i.unidade || '')),
+          el('td', { class: 'num mapa-total' }, R.num(cons.tot, 2)),
+          el('td', null, barraUso(uso)),
+          colunas.map((col, k) => {
+            const v = col.peds.reduce((s, p) => s + ((qtd[p.id] || {})[i.id] || 0), 0);
+            if (!v) return el('td', { class: 'mapa-cel vazia' }, '');
+            if (i.preco_unitario != null) totCol[k] += v * i.preco_unitario;
+            const somaOrg = cons.porOrg[col.orgao.id] || 0, pct = somaOrg / lim * 100;
+            return el('td', { class: 'mapa-cel ' + corUso(pct), title: col.orgao.nome + '\n' + col.sub + '\nNeste item: ' + R.num(v, 2) + ' ' + (i.unidade || '') + '\nSoma do órgão: ' + R.num(somaOrg, 2) + ' = ' + R.num(pct, 0) + '% do limite de 50%' },
+              el('span', { class: 'mapa-v' }, R.num(v, 2)), el('span', { class: 'mapa-p' }, R.num(pct, 0) + '%'));
+          }));
+      });
+      const tabelaMapa = el('div', { class: 'tabela-caixa mapa-caixa', 'data-sem-paginas': '1' }, el('table', { class: 'tabela tabela-mapa' },
+        el('thead', null, el('tr', null,
+          el('th', { scope: 'col', class: 'mapa-item' }, 'Item'), el('th', { scope: 'col', class: 'num' }, 'Registrado'), el('th', { scope: 'col', class: 'num' }, 'Aderido'), el('th', { scope: 'col' }, 'Uso do dobro'),
+          colunas.map((col) => el('th', { scope: 'col', class: 'mapa-col' }, est.modo === 'orgao' ? el('a', { href: col.peds.length === 1 ? '#pedido-' + col.peds[0].id : '#pedidos', title: col.orgao.nome }, col.titulo) : el('a', { href: '#pedido-' + col.peds[0].id }, col.titulo),
+            el('span', { class: 'sub-linha' }, col.sub))))),
+        el('tbody', null, corpo.length ? corpo : el('tr', null, el('td', { colspan: 4 + colunas.length, class: 'vazio' }, 'Nenhum item com esses filtros.'))),
+        colunas.length && totCol.some((v) => v) ? el('tfoot', null, el('tr', null, el('th', { scope: 'row', class: 'mapa-item' }, 'Valor autorizado (R$)'), el('td', null), el('td', null), el('td', null),
+          totCol.map((v) => el('td', { class: 'num' }, v ? R.moeda(v) : '')))) : null));
+      const botao = (modo, rot) => el('button', { type: 'button', class: 'aba-p', role: 'tab', 'aria-selected': est.modo === modo ? 'true' : 'false', onclick: () => { est.modo = modo; desenhar(); } }, rot);
+      const busca = el('input', { type: 'search', class: 'busca', placeholder: 'Filtrar itens', value: est.busca, 'aria-label': 'Filtrar itens' });
+      busca.addEventListener('input', () => { est.busca = busca.value; clearTimeout(busca._t); busca._t = setTimeout(() => { desenhar(); const n = caixa.querySelector('input.busca'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250); });
+      const so = el('input', { type: 'checkbox', checked: est.soComAdesao });
+      so.addEventListener('change', () => { est.soComAdesao = so.checked; desenhar(); });
+      rc(caixa,
+        el('div', { class: 'mapa-barra' },
+          el('div', { class: 'abas-internas', role: 'tablist', 'aria-label': 'Colunas do mapa' }, botao('orgao', 'Por órgão (' + new Set(peds.map((p) => p.orgao_id)).size + ')'), botao('oficio', 'Por ofício (' + peds.length + ')')),
+          busca, el('label', { class: 'checkbox' }, so, ' Só itens com adesão'),
+          el('div', { class: 'mapa-legenda', 'aria-label': 'Legenda: uso do limite de 50% do órgão no item' }, el('span', null, 'Uso dos 50% do órgão:'),
+            el('i', { class: 'uso-baixo' }, 'até 50%'), el('i', { class: 'uso-medio' }, '50–80%'), el('i', { class: 'uso-alto' }, '80–100%'), el('i', { class: 'uso-excedido' }, 'acima'))),
+        peds.length ? tabelaMapa : el('p', { class: 'vazio' }, 'Nenhuma adesão autorizada nesta ata.'),
+        peds.length ? el('p', { class: 'ajuda mt-05' }, 'Passe o mouse numa célula para ver o detalhe. ' + (est.modo === 'orgao' ? 'Cada coluna soma todos os ofícios do órgão.' : 'Cada coluna é um ofício.')) : null);
+    }
+    desenhar();
+    return caixa;
+  }
+
+
+  // ================================================================= SOLICITAÇÕES (formulário online)
+  const SIT_SOL = { recebida: ['Recebida', 'etiqueta-pendente'], em_analise: ['Em análise', 'etiqueta-azul'], atendida: ['Atendida', 'etiqueta-ativo'], recusada: ['Recusada', 'etiqueta-desativado'] };
+  const etiquetaSol = (x) => el('span', { class: 'etiqueta ' + SIT_SOL[x][1] }, SIT_SOL[x][0]);
+  const linkFormulario = () => location.href.split('#')[0] + '#solicitar';
+
+  TELAS.solicitacoes = (c) => {
+    const b = estado.base;
+    const pend = b.solicitacoes.filter((x) => x.situacao === 'recebida' || x.situacao === 'em_analise');
+    const copiar = el('button', { type: 'button', class: 'btn btn-claro', onclick: async () => { try { await navigator.clipboard.writeText(linkFormulario()); toast('Link do formulário copiado.'); } catch (e) { toast('Link: ' + linkFormulario()); } } }, 'Copiar link do formulário');
+    rc(c, cabecalho('Solicitações recebidas', pend.length + ' aguardando análise · ' + b.solicitacoes.length + ' no total', copiar, el('a', { class: 'btn btn-claro', href: '#solicitar' }, 'Abrir o formulário ↗')),
+      el('p', { class: 'msg msg-info' }, 'O órgão interessado preenche o formulário online (sem login), anexa o ofício e já vê o saldo disponível. A solicitação cai aqui; você confere e lança como pedido com um clique, e o ofício sai normalmente.'),
+      b.solicitacoes.length ? tabela(['Protocolo', 'Recebida em', 'Órgão', 'Ofício do órgão', 'Itens', 'Situação', ''], b.solicitacoes.map((x) => el('tr', null,
+        el('td', null, el('a', { href: '#solicitacao-' + x.id }, el('strong', null, x.protocolo))),
+        el('td', { class: 'num' }, x.criado_em ? new Date(x.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''),
+        el('td', null, x.orgao_nome, el('span', { class: 'sub-linha' }, O.formatarCnpj(x.cnpj))),
+        el('td', null, x.oficio_numero || '—'), el('td', { class: 'num' }, (x.itens || []).length), el('td', null, etiquetaSol(x.situacao)),
+        el('td', { class: 'acoes' }, el('a', { class: 'btn ' + (x.situacao === 'recebida' || x.situacao === 'em_analise' ? 'btn-primario' : 'btn-claro') + ' btn-p', href: '#solicitacao-' + x.id }, x.situacao === 'recebida' || x.situacao === 'em_analise' ? 'Analisar' : 'Ver')))))
+        : el('p', { class: 'vazio' }, 'Nenhuma solicitação recebida ainda. Envie o link do formulário aos órgãos interessados.'));
+  };
+
+  TELAS.solicitacao = (c, id) => {
+    const b = estado.base, x = b.solicitacoes.find((y) => y.id === id);
+    if (!x) { rc(c, cabecalho('Solicitação não encontrada', null, el('a', { class: 'btn btn-claro', href: '#solicitacoes' }, 'Voltar'))); return; }
+    const org = b.orgaos.find((o) => o.cnpj === x.cnpj);
+    const orgSim = org || { id: '__novo__', esfera: x.esfera || 'Municipal' };
+    const res = R.analisar(b, orgSim, hoje(), x.itens.filter((l) => b.itensPorId[l.item_id]));
+    const aberta = x.situacao === 'recebida' || x.situacao === 'em_analise';
+    const acoes = [el('a', { class: 'btn btn-claro', href: '#solicitacoes' }, '‹ Solicitações')];
+    if (aberta && podeEditar()) acoes.push(el('button', { type: 'button', class: 'btn btn-claro btn-texto-perigo', onclick: () => recusarSolicitacao(x) }, 'Recusar'),
+      el('button', { type: 'button', class: 'btn btn-primario', onclick: () => lancarSolicitacao(x) }, 'Lançar como pedido'));
+    rc(c, cabecalho('Solicitação ' + x.protocolo, x.orgao_nome, ...acoes),
+      x.situacao === 'atendida' && x.pedido_id && b.pedidosPorId[x.pedido_id] ? el('p', { class: 'msg msg-ok' }, 'Atendida pelo ', el('a', { href: '#pedido-' + x.pedido_id }, 'Ofício nº ' + b.pedidosPorId[x.pedido_id].numero_oficio), '.') : null,
+      x.situacao === 'recusada' ? el('p', { class: 'msg msg-erro' }, 'Recusada: ' + (x.motivo_recusa || '')) : null,
+      !org && aberta ? el('p', { class: 'msg msg-falta' }, 'Órgão ainda não cadastrado. Ao lançar, ele é cadastrado com os dados abaixo.') : null,
+      el('div', { class: 'grade grade-2' },
+        el('section', { class: 'cartao' }, el('h2', null, 'Órgão solicitante'),
+          el('dl', { class: 'dados' }, el('dt', null, 'Órgão'), el('dd', null, x.orgao_nome), el('dt', null, 'CNPJ'), el('dd', null, O.formatarCnpj(x.cnpj)), el('dt', null, 'Esfera'), el('dd', null, x.esfera || '—'),
+            el('dt', null, 'Responsável'), el('dd', null, [x.responsavel, x.cargo].filter(Boolean).join(' · ') || '—'), el('dt', null, 'Contato'), el('dd', null, [x.email, x.telefone].filter(Boolean).join(' · ')))),
+        el('section', { class: 'cartao' }, el('h2', null, 'Pedido'),
+          el('dl', { class: 'dados' }, el('dt', null, 'Situação'), el('dd', null, etiquetaSol(x.situacao)), el('dt', null, 'Ofício do órgão'), el('dd', null, (x.oficio_numero || '—') + (x.oficio_data ? ', de ' + R.dataBR(x.oficio_data) : '')),
+            el('dt', null, 'Finalidade'), el('dd', null, x.finalidade || '—'), el('dt', null, 'Recebida em'), el('dd', null, new Date(x.criado_em).toLocaleString('pt-BR')),
+            el('dt', null, 'Anexos'), el('dd', null, (x.arquivos || []).length ? el('ul', { class: 'm-0 lista-anexos' }, x.arquivos.map((f) => el('li', null, f.tipo + ': ',
+              f.caminho ? el('button', { type: 'button', class: 'link', onclick: async () => { const u = await D.urlArquivo(f.caminho); if (u) window.open(u, '_blank', 'noopener'); else toast('Arquivo indisponível.', true); } }, f.nome) : el('span', null, f.nome, ' (na prévia o arquivo não é guardado)')))) : 'nenhum')))),
+      el('section', { class: 'cartao' }, el('h2', null, 'Itens pedidos e conferência com o saldo de hoje'),
+        tabela(['ARP', 'Item', 'Descrição', 'Und.', 'Qtd pedida', 'Disponível para o órgão', 'Resultado previsto'], res.map((r) => el('tr', { class: 'lin-' + r.decisao },
+          el('td', null, r.ata.numero), el('td', { class: 'num' }, r.item.numero), el('td', { class: 'desc' }, r.item.descricao), el('td', null, r.item.unidade || ''),
+          el('td', { class: 'num' }, R.num(r.q, 2)), el('td', { class: 'num' }, R.num(r.disponivel, 2)),
+          el('td', { class: 'resultado ' + (r.decisao === 'autorizado' ? 'ok' : 'nao') }, el('strong', null, r.decisao === 'autorizado' ? '✓ Pode ser autorizado' : '✕ Seria negado'), r.motivo)))),
+        el('p', { class: 'ajuda mt-05' }, 'A conferência final é feita de novo ao registrar o pedido.')));
+  };
+
+  async function lancarSolicitacao(x) {
+    const b = estado.base;
+    try {
+      let org = b.orgaos.find((o) => o.cnpj === x.cnpj);
+      if (!org) {
+        org = await D.salvar('orgaos', { nome: x.orgao_nome, cnpj: x.cnpj, municipio: x.municipio || null, uf: x.uf || null, esfera: x.esfera || 'Municipal',
+          tratamento: 'Ao Senhor', responsavel: x.responsavel || null, cargo: x.cargo || null, email: x.email || null, ativo: true });
+      } else {
+        const falta = {};
+        for (const k of ['responsavel', 'cargo', 'email']) if (!org[k] && x[k]) falta[k] = x[k];
+        if (Object.keys(falta).length) await D.salvar('orgaos', { id: org.id, ...falta });
+      }
+      if (x.situacao === 'recebida') await D.atualizarSolicitacao(x.id, { situacao: 'em_analise', orgao_id: org.id });
+      await recarregar();
+      const qtd = {}; x.itens.forEach((l) => { if (b.itensPorId[l.item_id]) qtd[l.item_id] = String(l.qtd); });
+      rascunho = { ...novoRascunho(), orgao_id: org.id, oficio_solicitante: x.oficio_numero || '', data_solicitante: x.oficio_data || '', finalidade: x.finalidade || '',
+        atas: [...new Set(x.itens.map((l) => b.itensPorId[l.item_id] && b.itensPorId[l.item_id].ata_id).filter(Boolean))], qtd, solicitacao_id: x.id };
+      location.hash = '#novo';
+    } catch (e) { toast(e.message, true); }
+  }
+  function recusarSolicitacao(x) {
+    const m = area('', { rows: 3, placeholder: 'Ex.: ata com vigência encerrada; documento ilegível; pedido duplicado…' });
+    const btn = el('button', { type: 'button', class: 'btn btn-perigo' }, 'Recusar');
+    const d = abrirDialogo('Recusar a solicitação ' + x.protocolo, el('div', null, el('p', null, 'O órgão vê a recusa e o motivo ao consultar o protocolo.'), campo('rs-motivo', 'Motivo', m, null, true)),
+      [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Voltar'), btn]);
+    btn.addEventListener('click', async () => {
+      if (!marcarErro(m, m.value.trim() ? '' : 'Informe o motivo.')) return;
+      ocupado(btn, 'Salvando…');
+      try { await D.atualizarSolicitacao(x.id, { situacao: 'recusada', motivo_recusa: m.value.trim() }); await recarregar(); d.close(); toast('Solicitação recusada.'); rotear(); } catch (e) { toast(e.message, true); ocupado(btn); }
+    });
+  }
+
+  // ---------------------------------------------------------------- formulário público
+  const sol = { cnpj: '', orgao: {}, conhecido: null, aderido: {}, ataSel: '', qtd: {}, oficio_numero: '', oficio_data: '', finalidade: '', arquivos: {}, declaracao: false, atas: null };
+  async function telaPublica() {
+    const c = $('conteudo-publico');
+    if (/^#consultar/.test(location.hash)) return telaConsulta(c);
+    rc(c, el('p', { class: 'ajuda' }, 'Carregando atas…'));
+    try { sol.atas = sol.atas || await D.publicoAtas(); } catch (e) { rc(c, el('p', { class: 'msg msg-erro' }, 'Não foi possível carregar as atas: ' + e.message)); return; }
+    const atas = sol.atas;
+    const itensPorId = {}; atas.forEach((a) => a.itens.forEach((i) => (itensPorId[i.id] = { ...i, ata: a })));
+    const disp = (i) => Math.max(0, Math.min(i.qtd_registrada * 0.5 - (sol.aderido[i.id] || 0), i.qtd_registrada * 2 - (i.aderido || 0)));
+
+    // 1. Órgão
+    const fCnpj = txt(sol.cnpj ? O.formatarCnpj(sol.cnpj) : '', { inputmode: 'numeric', maxlength: 18, placeholder: '00.000.000/0000-00', autocomplete: 'off' });
+    const fichaOrg = el('div');
+    const f = {
+      nome: txt(sol.orgao.nome, { placeholder: 'Município de …/UF', maxlength: 160 }), municipio: txt(sol.orgao.municipio, { maxlength: 80 }),
+      uf: sel([['', 'UF'], ...UFS.map((u) => [u, u])], sol.orgao.uf || ''), esfera: sel(['Municipal', 'Estadual', 'Consórcio', 'Outro'].map((e) => [e, e]), sol.orgao.esfera || 'Municipal'),
+      responsavel: txt(sol.orgao.responsavel, { maxlength: 120 }), cargo: txt(sol.orgao.cargo, { maxlength: 120, placeholder: 'Prefeito Municipal' }),
+      email: txt(sol.orgao.email, { type: 'email', maxlength: 120 }), telefone: txt(sol.orgao.telefone, { maxlength: 30, inputmode: 'tel' }) };
+    Object.entries(f).forEach(([k, i]) => i.addEventListener('input', () => (sol.orgao[k] = i.value)));
+    Object.entries(f).forEach(([k, i]) => i.addEventListener('change', () => (sol.orgao[k] = i.value)));
+    const blocoDados = el('div', null,
+      campo('sp-nome', 'Nome do órgão ou entidade', f.nome, 'Como deve sair no ofício de resposta.', true),
+      el('div', { class: 'grade-campos' }, campo('sp-mun', 'Município', f.municipio, null, true), campo('sp-uf', 'UF', f.uf, null, true), campo('sp-esfera', 'Esfera', f.esfera)),
+      el('div', { class: 'grade-campos' }, campo('sp-resp', 'Responsável (quem assina o pedido)', f.responsavel, null, true), campo('sp-cargo', 'Cargo', f.cargo, null, true)),
+      el('div', { class: 'grade-campos' }, campo('sp-email', 'E-mail para resposta', f.email, null, true), campo('sp-tel', 'Telefone', f.telefone)));
+    async function buscarCnpj() {
+      const n = fCnpj.value.replace(/\D/g, '');
+      fCnpj.value = n.length === 14 ? O.formatarCnpj(n) : n;
+      if (n.length !== 14) { sol.conhecido = null; rc(fichaOrg); desenharItens(); return; }
+      if (n === sol.cnpj && sol.conhecido !== null) return;
+      sol.cnpj = n; rc(fichaOrg, el('p', { class: 'ajuda' }, 'Consultando…'));
+      try {
+        const r = await D.publicoOrgao(n);
+        sol.aderido = r.aderido || {};
+        sol.conhecido = !!r.orgao;
+        if (r.orgao) {
+          for (const k of ['nome', 'municipio', 'uf', 'esfera', 'responsavel', 'cargo', 'email']) if (r.orgao[k] && !f[k].value) { f[k].value = r.orgao[k]; sol.orgao[k] = r.orgao[k]; }
+          rc(fichaOrg, el('p', { class: 'msg msg-ok' }, 'Órgão já cadastrado: ', el('strong', null, r.orgao.nome), '. Confira os dados abaixo. O saldo de cada item já considera as adesões anteriores deste CNPJ.'));
+        } else rc(fichaOrg, el('p', { class: 'msg msg-info' }, 'Primeiro pedido deste CNPJ. Preencha os dados do órgão.'));
+      } catch (e) { rc(fichaOrg, el('p', { class: 'msg msg-erro' }, e.message)); }
+      desenharItens();
+    }
+    fCnpj.addEventListener('input', () => { const n = fCnpj.value.replace(/\D/g, ''); if (n.length === 14) buscarCnpj(); });
+    fCnpj.addEventListener('blur', buscarCnpj);
+
+    // 2. Itens
+    const selAta = sel([['', 'Escolha a ata…'], ...atas.map((a) => [a.id, 'ARP ' + a.numero + ' · ' + a.detentora + ' · ' + (a.objeto || 'Pregão ' + a.pregao)])], sol.ataSel);
+    const areaItens = el('div'), resumo = el('div', { class: 'resumo-solicitacao' });
+    selAta.addEventListener('change', () => { sol.ataSel = selAta.value; desenharItens(); });
+    function desenharItens() {
+      const a = atas.find((x) => x.id === sol.ataSel);
+      if (!a) { rc(areaItens, el('p', { class: 'vazio' }, 'Escolha a ata para ver os itens e o saldo disponível.')); atualizarResumo(); return; }
+      const semCnpj = sol.cnpj.length !== 14;
+      rc(areaItens,
+        el('p', { class: 'ajuda' }, 'Contratado: ', el('strong', null, a.detentora), a.vigencia_fim ? ' · Ata vigente até ' + R.dataBR(a.vigencia_fim) : '', semCnpj ? ' · Informe o CNPJ acima para ver o saldo do seu órgão.' : ''),
+        el('div', { class: 'tabela-caixa', 'data-sem-paginas': '1' }, el('table', { class: 'tabela' },
+          el('thead', null, el('tr', null, ['Item', 'Descrição', 'Und.', 'Preço unit. (R$)', 'Disponível para o seu órgão', 'Quantidade'].map((t, k) => el('th', { scope: 'col', class: k === 0 || k === 3 || k === 4 ? 'num' : null }, t)))),
+          el('tbody', null, a.itens.map((i) => {
+            const d = disp(i);
+            const inp = el('input', { type: 'number', class: 'qtd', min: '0', step: 'any', inputmode: 'decimal', value: sol.qtd[i.id] ?? '', 'aria-label': 'Quantidade do item ' + i.numero, disabled: semCnpj || d <= 0 ? true : null });
+            const aviso = el('span', { class: 'sub-linha' });
+            const conferir = () => { const q = Number(inp.value); const ex = q > d + 1e-9; inp.classList.toggle('invalido', ex); aviso.textContent = ex ? 'Acima do disponível (máx. ' + R.num(d, 2) + ')' : ''; aviso.className = 'sub-linha' + (ex ? ' ajuda-erro' : ''); };
+            inp.addEventListener('input', () => { if (inp.value === '' || Number(inp.value) <= 0) delete sol.qtd[i.id]; else sol.qtd[i.id] = inp.value; conferir(); atualizarResumo(); });
+            conferir();
+            return el('tr', null, el('td', { class: 'num' }, i.numero), el('td', { class: 'desc' }, i.descricao), el('td', null, i.unidade || ''),
+              el('td', { class: 'num' }, i.preco_unitario != null ? R.moeda(i.preco_unitario) : '—'),
+              el('td', { class: 'num' + (d <= 0 ? ' saldo-zero' : '') }, semCnpj ? '—' : d > 0 ? R.num(d, 2) : 'esgotado'), el('td', null, inp, aviso));
+          })))));
+      atualizarResumo();
+    }
+    function itensEscolhidos() { return Object.entries(sol.qtd).filter(([id, q]) => itensPorId[id] && Number(q) > 0).map(([id, q]) => ({ item_id: id, qtd: Number(q) })); }
+    function atualizarResumo() {
+      const ls = itensEscolhidos();
+      if (!ls.length) { rc(resumo); return; }
+      let valor = 0;
+      rc(resumo, el('h3', null, 'Itens no seu pedido (' + ls.length + ')'),
+        el('ul', { class: 'lista-resumo' }, ls.map((l) => { const i = itensPorId[l.item_id]; if (i.preco_unitario != null) valor += l.qtd * i.preco_unitario;
+          return el('li', null, el('span', null, 'ARP ' + i.ata.numero + ' · item ' + i.numero + ' – ' + i.descricao), el('strong', null, R.num(l.qtd, 2) + ' ' + (i.unidade || ''))); })),
+        valor ? el('p', { class: 'ajuda' }, 'Valor estimado: R$ ' + R.moeda(valor)) : null);
+    }
+
+    // 3. Ofício e documentos
+    const fOf = txt(sol.oficio_numero, { maxlength: 40, placeholder: 'Ex.: 088/2026' }), fOfData = el('input', { type: 'date', value: sol.oficio_data });
+    const fFin = area(sol.finalidade, { rows: 2, placeholder: 'Ex.: à recuperação de estradas vicinais da zona rural do Município' });
+    fOf.addEventListener('input', () => (sol.oficio_numero = fOf.value)); fOfData.addEventListener('change', () => (sol.oficio_data = fOfData.value)); fFin.addEventListener('input', () => (sol.finalidade = fFin.value));
+    const arq = (tipo, chave) => { const i = el('input', { type: 'file', accept: 'application/pdf,.pdf' }); i.addEventListener('change', () => { sol.arquivos[chave] = i.files[0] ? { tipo, arquivo: i.files[0] } : undefined; }); return i; };
+    const fArqOf = arq('Ofício de solicitação', 'oficio'), fArqJust = arq('Justificativa da vantagem e pesquisa de preços', 'justificativa');
+    const fDecl = el('input', { type: 'checkbox', checked: sol.declaracao });
+    fDecl.addEventListener('change', () => (sol.declaracao = fDecl.checked));
+    const msgEnvio = el('div');
+    const btnEnviar = el('button', { type: 'button', class: 'btn btn-primario btn-largo' }, 'Enviar solicitação');
+    btnEnviar.addEventListener('click', async () => {
+      rc(msgEnvio);
+      if (!marcarErro(fCnpj, sol.cnpj.length === 14 ? '' : 'Informe o CNPJ (14 números).')) return;
+      for (const [k, i] of Object.entries({ nome: f.nome, municipio: f.municipio, uf: f.uf, responsavel: f.responsavel, cargo: f.cargo })) if (!marcarErro(i, i.value.trim() ? '' : 'Obrigatório.')) return;
+      if (!marcarErro(f.email, /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.value.trim()) ? '' : 'E-mail inválido.')) return;
+      const ls = itensEscolhidos();
+      if (!ls.length) { rc(msgEnvio, el('p', { class: 'msg msg-erro' }, 'Escolha a ata e informe a quantidade de pelo menos um item.')); selAta.focus(); return; }
+      const acima = ls.filter((l) => l.qtd > disp(itensPorId[l.item_id]) + 1e-9);
+      if (acima.length) { rc(msgEnvio, el('p', { class: 'msg msg-erro' }, acima.length + ' item(ns) acima do disponível para o seu órgão. Ajuste as quantidades.')); return; }
+      if (!marcarErro(fOf, fOf.value.trim() ? '' : 'Informe o número do ofício.')) return;
+      if (!marcarErro(fArqOf, sol.arquivos.oficio ? (/\.pdf$/i.test(sol.arquivos.oficio.arquivo.name) && sol.arquivos.oficio.arquivo.size <= 20 * 1024 * 1024 ? '' : 'Envie um PDF de até 20 MB.') : 'Anexe o ofício assinado (PDF).')) return;
+      if (sol.arquivos.justificativa && !marcarErro(fArqJust, /\.pdf$/i.test(sol.arquivos.justificativa.arquivo.name) && sol.arquivos.justificativa.arquivo.size <= 20 * 1024 * 1024 ? '' : 'Envie um PDF de até 20 MB.')) return;
+      if (!sol.declaracao) { rc(msgEnvio, el('p', { class: 'msg msg-erro' }, 'Marque a declaração para enviar.')); fDecl.focus(); return; }
+      ocupado(btnEnviar, 'Enviando…');
+      try {
+        const protocolo = await D.enviarSolicitacao({ cnpj: sol.cnpj, orgao_nome: f.nome.value.trim(), municipio: f.municipio.value.trim(), uf: f.uf.value, esfera: f.esfera.value,
+          responsavel: f.responsavel.value.trim(), cargo: f.cargo.value.trim(), email: f.email.value.trim(), telefone: f.telefone.value.trim() || null,
+          oficio_numero: fOf.value.trim(), oficio_data: fOfData.value || null, finalidade: fFin.value.trim() || null, itens: ls, declaracao: true }, Object.values(sol.arquivos).filter(Boolean));
+        if (estado.base) await recarregar();
+        const cnpjEnviado = sol.cnpj;
+        Object.assign(sol, { qtd: {}, arquivos: {}, declaracao: false, oficio_numero: '', oficio_data: '', finalidade: '', atas: null });
+        rc(c, el('section', { class: 'cartao cartao-sucesso' },
+          el('div', { class: 'sucesso-icone', 'aria-hidden': 'true' }, '✓'), el('h1', null, 'Solicitação enviada'),
+          el('p', null, 'Guarde o número do protocolo:'), el('p', { class: 'protocolo' }, protocolo),
+          el('p', { class: 'sub' }, 'O CIMOP vai analisar o pedido e responder por ofício no e-mail informado. Acompanhe pelo protocolo e pelo CNPJ ' + O.formatarCnpj(cnpjEnviado) + '.'),
+          el('div', { class: 'linha-botoes' }, el('a', { class: 'btn btn-claro', href: '#consultar' }, 'Consultar andamento'), el('button', { type: 'button', class: 'btn btn-primario', onclick: () => telaPublica() }, 'Fazer outra solicitação'))));
+        window.scrollTo(0, 0);
+      } catch (e) { rc(msgEnvio, el('p', { class: 'msg msg-erro' }, e.message)); ocupado(btnEnviar); }
+    });
+
+    const passo = (n, titulo, ...filhos) => el('section', { class: 'cartao passo-publico' }, el('h2', null, el('span', { class: 'passo-num' }, n), titulo), filhos);
+    rc(c,
+      el('div', { class: 'intro-publica' }, el('h1', null, 'Solicitar adesão a Ata de Registro de Preços'),
+        el('p', { class: 'sub' }, 'Para órgãos e entidades que desejam aderir, como não participantes, às Atas de Registro de Preços do CIMOP (art. 86, § 2º, da Lei nº 14.133/2021 e art. 28 da Resolução CIMOP nº 018/2023).'),
+        el('p', null, el('a', { class: 'link', href: '#consultar' }, 'Já enviou? Consulte o andamento pelo protocolo'),
+          estado.usuario ? [' · ', el('a', { class: 'link', href: '#solicitacoes' }, 'Voltar ao painel do CIMOP')] : null)),
+      passo(1, 'Órgão solicitante', campo('sp-cnpj', 'CNPJ do órgão ou entidade', fCnpj, 'Cada CNPJ tem limite próprio de 50% do registrado por item.', true), fichaOrg, blocoDados),
+      passo(2, 'Ata e quantidades', campo('sp-ata', 'Ata de registro de preços', selAta, atas.length ? 'Só aparecem atas vigentes. Pode juntar itens de mais de uma ata: escolha outra e continue.' : 'Nenhuma ata vigente no momento.'), areaItens, resumo),
+      passo(3, 'Ofício e documentos',
+        el('div', { class: 'grade-campos' }, campo('sp-of', 'Nº do ofício de solicitação', fOf, null, true), campo('sp-ofdata', 'Data do ofício', fOfData)),
+        campo('sp-fin', 'Finalidade da adesão', fFin, 'Para que serão usados os itens. Entra no ofício de resposta.'),
+        el('div', { class: 'grade-campos' }, campo('sp-arqof', 'Ofício assinado (PDF)', fArqOf, null, true), campo('sp-arqjust', 'Justificativa da vantagem e pesquisa de preços (PDF)', fArqJust, 'Recomendado (art. 28, I e II, da Resolução 018/2023).')),
+        el('label', { class: 'checkbox declaracao' }, fDecl, ' Declaro que este órgão demonstrará a vantagem da adesão e a compatibilidade dos preços registrados com os de mercado (art. 23 da Lei nº 14.133/2021), e que a contratação dependerá da aceitação do contratado e será formalizada dentro da vigência da ata.'),
+        msgEnvio, btnEnviar));
+    desenharItens();
+    if (sol.cnpj.length === 14 && sol.conhecido === null) buscarCnpj();
+    c.focus({ preventScroll: true }); window.scrollTo(0, 0);
+  }
+
+  function telaConsulta(c) {
+    const fProt = txt('', { placeholder: 'SOL-2026-0001', maxlength: 20 }), fCnpj = txt(sol.cnpj ? O.formatarCnpj(sol.cnpj) : '', { inputmode: 'numeric', maxlength: 18 });
+    const saida = el('div');
+    const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Consultar');
+    btn.addEventListener('click', async () => {
+      const cnpj = fCnpj.value.replace(/\D/g, '');
+      if (!marcarErro(fProt, fProt.value.trim() ? '' : 'Informe o protocolo.')) return;
+      if (!marcarErro(fCnpj, cnpj.length === 14 ? '' : 'CNPJ com 14 números.')) return;
+      ocupado(btn, 'Consultando…');
+      try {
+        const r = await D.consultarSolicitacao(fProt.value, cnpj);
+        rc(saida, !r ? el('p', { class: 'msg msg-erro' }, 'Não encontramos esse protocolo para este CNPJ.') : el('div', { class: 'msg msg-' + (r.situacao === 'recusada' ? 'erro' : r.situacao === 'atendida' ? 'ok' : 'info') },
+          el('p', null, el('strong', null, r.protocolo), ' · ', SIT_SOL[r.situacao][0]),
+          r.situacao === 'atendida' ? el('p', null, 'Respondido pelo Ofício nº ' + (r.oficio || '—') + ' do CIMOP, enviado ao e-mail informado.') : null,
+          r.situacao === 'recusada' ? el('p', null, 'Motivo: ' + (r.motivo_recusa || '—')) : null,
+          r.situacao === 'recebida' || r.situacao === 'em_analise' ? el('p', null, 'Seu pedido está na fila de análise do CIMOP.') : null));
+      } catch (e) { rc(saida, el('p', { class: 'msg msg-erro' }, e.message)); } finally { ocupado(btn); }
+    });
+    rc(c, el('div', { class: 'intro-publica' }, el('h1', null, 'Consultar solicitação'), el('p', null, el('a', { class: 'link', href: '#solicitar' }, '‹ Voltar ao formulário'))),
+      el('section', { class: 'cartao passo-publico' }, el('div', { class: 'grade-campos' }, campo('cs-prot', 'Protocolo', fProt, null, true), campo('cs-cnpj', 'CNPJ do órgão', fCnpj, null, true)), btn, saida));
+  }
+
+  // ================================================================= ÓRGÃOS
+  TELAS.orgaos = (c) => {
+    const b = estado.base;
+    const busca = el('input', { type: 'search', placeholder: 'Buscar por nome, CNPJ ou município', 'aria-label': 'Buscar órgão' });
+    const lista = el('div');
+    const qtdAdesoes = (o) => b.pedidos.filter((p) => p.orgao_id === o.id && p.situacao !== 'cancelado').length;
+    const filtrar = () => {
+      const t = normalizar(busca.value);
+      const res = b.orgaos.filter((o) => !t || normalizar(o.nome + ' ' + (o.cnpj || '') + ' ' + (o.municipio || '') + ' ' + (o.uf || '')).includes(t));
+      rc(lista, res.length ? tabela(['Órgão', 'CNPJ', 'UF', 'Esfera', 'Destinatário do ofício', 'Pedidos', ''], res.map((o) => {
+        const falta = !o.cnpj || !o.responsavel;
+        return el('tr', null, el('td', null, el('strong', null, o.nome), o.ativo === false ? el('span', { class: 'etiqueta etiqueta-inativo ml-1' }, 'Inativo') : null),
+          el('td', { class: 'num' }, o.cnpj ? O.formatarCnpj(o.cnpj) : el('span', { class: 'falta-leve' }, 'falta')), el('td', null, o.uf || ''), el('td', null, o.esfera),
+          el('td', null, o.responsavel || el('span', { class: 'falta-leve' }, 'falta'), o.cargo ? el('span', { class: 'sub-linha' }, o.cargo) : null),
+          el('td', { class: 'num' }, qtdAdesoes(o)),
+          el('td', { class: 'acoes' }, podeEditar() ? el('button', { type: 'button', class: 'btn ' + (falta ? 'btn-primario' : 'btn-claro') + ' btn-p', onclick: () => formOrgao(o, () => rotear()) }, falta ? 'Completar' : 'Editar') : null));
+      })) : el('p', { class: 'vazio' }, 'Nenhum órgão encontrado.'));
+      paginarTudo(lista);
+    };
+    busca.addEventListener('input', filtrar);
+    const incompletos = b.orgaos.filter((o) => !o.cnpj || !o.responsavel).length;
+    rc(c, cabecalho('Órgãos aderentes', b.orgaos.length + ' órgão(s). O limite de 50% é controlado por CNPJ.', podeEditar() ? el('button', { type: 'button', class: 'btn btn-primario', onclick: () => formOrgao({}, () => rotear()) }, '+ Novo órgão') : null),
+      incompletos ? el('p', { class: 'msg msg-falta' }, incompletos + ' órgão(s) sem CNPJ ou destinatário. Complete para o ofício sair com esses dados.') : null,
+      el('div', { class: 'filtros' }, busca), lista);
+    filtrar();
+  };
+
+  function formOrgao(o, depois) {
+    const f = { nome: txt(o.nome, { placeholder: 'Município de …/RN', maxlength: 160 }), cnpj: txt(o.cnpj ? O.formatarCnpj(o.cnpj) : '', { inputmode: 'numeric', maxlength: 18, placeholder: '00.000.000/0000-00' }),
+      municipio: txt(o.municipio, { maxlength: 80 }), uf: sel(UFS.map((u) => [u, u]), o.uf || 'RN'),
+      esfera: sel(['Municipal', 'Estadual', 'Federal', 'Consórcio', 'Outro'].map((e) => [e, e]), o.esfera || 'Municipal'),
+      tratamento: sel([['Ao Senhor', 'Ao Senhor'], ['À Senhora', 'À Senhora']], o.tratamento || 'Ao Senhor'),
+      responsavel: txt(o.responsavel, { maxlength: 120 }), cargo: txt(o.cargo, { maxlength: 120, placeholder: 'Prefeito Municipal' }),
+      vocativo: txt(o.vocativo, { maxlength: 80, placeholder: 'Automático: "Senhor Prefeito,"' }), email: txt(o.email, { type: 'email', maxlength: 120 }),
+      ativo: el('input', { type: 'checkbox', checked: o.ativo !== false }) };
+    f.cnpj.addEventListener('input', () => { const n = f.cnpj.value.replace(/\D/g, '').slice(0, 14); f.cnpj.value = n.length === 14 ? O.formatarCnpj(n) : n; });
+    const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar');
+    const d = abrirDialogo(o.id ? 'Editar órgão' : 'Novo órgão', el('div', null,
+      campo('fo-nome', 'Nome (como sai no ofício)', f.nome, 'Ex.: Município de Riacho da Cruz/RN · Fundo Municipal de Saúde de …', true),
+      el('div', { class: 'grade-campos' }, campo('fo-cnpj', 'CNPJ', f.cnpj, null, true), campo('fo-esfera', 'Esfera', f.esfera, 'Federal: adesão vedada (art. 86, § 8º).')),
+      el('div', { class: 'grade-campos' }, campo('fo-mun', 'Município', f.municipio), campo('fo-uf', 'UF', f.uf)),
+      el('div', { class: 'secao-form' }, el('h3', null, 'Destinatário do ofício'),
+        el('div', { class: 'grade-campos' }, campo('fo-trat', 'Tratamento', f.tratamento), campo('fo-resp', 'Nome do responsável', f.responsavel)),
+        el('div', { class: 'grade-campos' }, campo('fo-cargo', 'Cargo', f.cargo), campo('fo-voc', 'Vocativo', f.vocativo)), campo('fo-email', 'E-mail', f.email)),
+      o.id ? el('label', { class: 'checkbox' }, f.ativo, ' Órgão ativo') : null),
+      [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), btn], true);
+    btn.addEventListener('click', async () => {
+      if (!marcarErro(f.nome, f.nome.value.trim() ? '' : 'Informe o nome.')) return;
+      const cnpj = f.cnpj.value.replace(/\D/g, '');
+      const dup = cnpj && estado.base.orgaos.find((x) => x.cnpj === cnpj && x.id !== o.id);
+      if (!marcarErro(f.cnpj, cnpj.length !== 14 ? 'CNPJ com 14 números.' : dup ? 'Esse CNPJ já é de ' + dup.nome + '.' : '')) return;
+      if (!marcarErro(f.email, f.email.value.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.value.trim()) ? 'E-mail inválido.' : '')) return;
+      ocupado(btn, 'Salvando…');
+      try {
+        const s = await D.salvar('orgaos', { ...(o.id ? { id: o.id } : {}), nome: f.nome.value.trim(), cnpj, municipio: f.municipio.value.trim() || null, uf: f.uf.value, esfera: f.esfera.value,
+          tratamento: f.tratamento.value, responsavel: f.responsavel.value.trim() || null, cargo: f.cargo.value.trim() || null, vocativo: f.vocativo.value.trim() || null,
+          email: f.email.value.trim() || null, ativo: f.ativo.checked });
+        await recarregar(); d.close(); toast('Órgão salvo.'); depois && depois(estado.base.orgaosPorId[s.id] || s);
+      } catch (e) { toast(e.message, true); ocupado(btn); }
+    });
+  }
+
+  // ================================================================= IMPORTAR
+  TELAS.importar = (c) => {
+    if (!podeEditar()) { rc(c, cabecalho('Acesso não permitido')); return; }
+    const arq = el('input', { type: 'file', accept: '.xlsx,.xls' });
+    const resultado = el('div');
+    arq.addEventListener('change', async () => {
+      const file = arq.files[0]; if (!file) return;
+      rc(resultado, el('p', { class: 'ajuda' }, 'Lendo a planilha…'));
+      try {
+        const d = await PL.ler(file);
+        const b = estado.base;
+        const novasAtas = d.atas.filter((a) => !b.atas.some((x) => x.numero === a.numero)).length;
+        const grupos = D.agruparAdesoes(d.adesoes);
+        const btn = el('button', { type: 'button', class: 'btn btn-primario', disabled: d.erros.length ? true : null }, 'Importar agora');
+        const prog = el('p', { class: 'ajuda' });
+        rc(resultado, el('section', { class: 'cartao' }, el('h2', null, 'Conferência: ' + file.name),
+          el('div', { class: 'importar-resumo' },
+            el('div', null, el('span', { class: 'rotulo' }, 'Atas'), el('strong', null, d.atas.length), el('small', null, novasAtas + ' nova(s) · ' + (d.atas.length - novasAtas) + ' atualizada(s)')),
+            el('div', null, el('span', { class: 'rotulo' }, 'Itens'), el('strong', null, d.itens.length), el('small', null, d.itens.filter((i) => i.preco_unitario == null).length + ' sem preço')),
+            el('div', null, el('span', { class: 'rotulo' }, 'Órgãos'), el('strong', null, d.orgaos.length), el('small', null, d.orgaos.filter((o) => !o.cnpj).length + ' sem CNPJ')),
+            el('div', null, el('span', { class: 'rotulo' }, 'Adesões (histórico)'), el('strong', null, grupos.length), el('small', null, d.adesoes.length + ' linha(s) de item'))),
+          d.erros.length ? el('div', { class: 'msg msg-erro' }, el('strong', null, 'Corrija na planilha e envie de novo:'), el('ul', null, d.erros.slice(0, 30).map((e) => el('li', null, e))), d.erros.length > 30 ? el('p', null, '+ ' + (d.erros.length - 30) + ' erro(s)') : null)
+            : el('p', { class: 'msg msg-ok' }, 'Planilha no formato certo. Atas, itens e órgãos que já existem são atualizados; adesões que já estão no sistema (mesmo ofício e órgão) não são duplicadas.'),
+          el('div', { class: 'linha-botoes' }, btn), prog));
+        btn.addEventListener('click', async () => {
+          ocupado(btn, 'Importando…');
+          try {
+            const r = await D.importar(d, (n, t) => (prog.textContent = 'Gravando adesões: ' + n + ' de ' + t + '…'));
+            await recarregar();
+            prog.textContent = '';
+            resultado.prepend(el('p', { class: 'msg msg-ok' }, `Importado: ${r.atas} ata(s), ${r.itens} item(ns), ${r.orgaos} órgão(s) e ${r.pedidos} adesão(ões)` + (r.ignorados ? ` (${r.ignorados} já existiam e foram mantidas).` : '.')));
+            btn.remove(); toast('Importação concluída.');
+          } catch (e) { toast(e.message, true); ocupado(btn); }
+        });
+      } catch (e) { rc(resultado, el('p', { class: 'msg msg-erro' }, e.message)); }
+    });
+    rc(c, cabecalho('Importar planilha', 'Atas, itens, órgãos e histórico de adesões a partir da planilha-modelo.'),
+      el('div', { class: 'grade grade-2' },
+        el('section', { class: 'cartao' }, el('h2', null, '1. Baixe o modelo'),
+          el('ol', { class: 'passos' }, el('li', null, 'Para uma ata nova: preencha só as abas ', el('strong', null, 'Atas'), ' e ', el('strong', null, 'Itens'), '.'),
+            el('li', null, 'Órgãos e Adesões são opcionais (servem para trazer histórico).'), el('li', null, 'Não mude os nomes das abas nem os títulos das colunas.')),
+          el('button', { type: 'button', class: 'btn btn-claro mt-05', onclick: () => baixar('Modelo de importação - Adesões ARP.xlsx', PL.modeloVazio(), XLSX_T) }, 'Baixar modelo vazio')),
+        el('section', { class: 'cartao' }, el('h2', null, '2. Envie a planilha preenchida'), campo('imp-arq', 'Arquivo (.xlsx)', arq, 'O sistema confere tudo antes de gravar.'))),
+      resultado);
+  };
+
+  // ================================================================= CONFIGURAÇÕES
+  TELAS.configuracoes = (c) => {
+    if (!eAdmin()) { rc(c, cabecalho('Acesso não permitido')); return; }
+    const cf = estado.base.config;
+    const f = { orgao_nome: txt(cf.orgao_nome), sigla: txt(cf.sigla, { maxlength: 20 }), cidade_uf: txt(cf.cidade_uf), presidente_nome: txt(cf.presidente_nome), presidente_cargo: txt(cf.presidente_cargo),
+      resolucao_srp: txt(cf.resolucao_srp), resolucao_alteracao: txt(cf.resolucao_alteracao), texto_anexos: area(cf.texto_anexos, { rows: 3 }) };
+    const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar');
+    btn.addEventListener('click', async () => {
+      for (const k of ['sigla', 'cidade_uf', 'presidente_nome', 'presidente_cargo', 'resolucao_srp']) if (!marcarErro(f[k], f[k].value.trim() ? '' : 'Obrigatório.')) return;
+      ocupado(btn, 'Salvando…');
+      try { await D.salvarConfig(Object.fromEntries(Object.entries(f).map(([k, i]) => [k, i.value.trim()]))); await recarregar(); toast('Configurações salvas.'); } catch (e) { toast(e.message, true); } finally { ocupado(btn); }
+    });
+    rc(c, cabecalho('Configurações do ofício', 'Dados fixos que entram em todos os ofícios. O timbre e o rodapé são os do Ofício nº 105/2026.'),
+      el('section', { class: 'cartao' }, el('h2', null, 'Assinatura e local'),
+        el('div', { class: 'grade-campos' }, campo('cf-pres', 'Presidente', f.presidente_nome, null, true), campo('cf-cargo', 'Cargo na assinatura', f.presidente_cargo, null, true)),
+        el('div', { class: 'grade-campos' }, campo('cf-cidade', 'Local da data', f.cidade_uf, null, true), campo('cf-sigla', 'Sigla no número do ofício', f.sigla, 'OFÍCIO Nº 105/2026 – CIMOP', true)),
+        campo('cf-nome', 'Nome do consórcio', f.orgao_nome)),
+      el('section', { class: 'cartao' }, el('h2', null, 'Fundamentação'),
+        el('div', { class: 'grade-campos' }, campo('cf-res', 'Regulamento do SRP', f.resolucao_srp, 'Citado nos arts. 28 e 29.', true), campo('cf-res2', 'Resolução que altera', f.resolucao_alteracao)),
+        campo('cf-anexos', 'Texto padrão dos anexos', f.texto_anexos, '{pregao} vira "Pregão Eletrônico nº 008/2025". Pode ser ajustado em cada pedido.')),
+      el('div', { class: 'barra-salvar' }, btn));
+  };
+
+  // ================================================================= USUÁRIOS
+  TELAS.usuarios = async (c) => {
+    if (!eAdmin()) { rc(c, cabecalho('Acesso não permitido')); return; }
+    const btnNovo = el('button', { type: 'button', class: 'btn btn-primario', onclick: () => formUsuario() }, '+ Novo usuário');
+    rc(c, cabecalho('Usuários', 'Quem pode entrar no sistema.', btnNovo), el('p', { class: 'ajuda' }, 'Carregando…'));
+    const lista = await D.usuarios();
+    rc(c, cabecalho('Usuários', lista.length + ' usuário(s). Perfis: Administrador (tudo), Operador (lança pedidos e cadastra), Consulta (só vê).', btnNovo),
+      tabela(['Nome', 'E-mail', 'Perfil', 'Situação', ''], lista.map((u) => el('tr', null, el('td', null, el('strong', null, u.nome)), el('td', null, u.email), el('td', null, NOME_PERFIL[u.perfil]),
+        el('td', null, el('span', { class: 'etiqueta ' + (u.ativo ? 'etiqueta-ativo' : 'etiqueta-desativado') }, u.ativo ? 'Ativo' : 'Desativado')),
+        el('td', { class: 'acoes' }, u.id === estado.usuario.id ? el('span', { class: 'ajuda' }, 'você') : el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: () => formUsuario(u) }, 'Editar'))))));
+    paginarTudo(c);
+  };
+  function formUsuario(u) {
+    u = u || {};
+    const f = { nome: txt(u.nome, { maxlength: 120 }), email: txt(u.email, { type: 'email', maxlength: 120, disabled: u.id ? true : null }), senha: txt('', { maxlength: 60 }),
+      perfil: sel(Object.entries(NOME_PERFIL), u.perfil || 'operador'), ativo: el('input', { type: 'checkbox', checked: u.ativo !== false }) };
+    const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar');
+    const d = abrirDialogo(u.id ? 'Editar usuário' : 'Novo usuário', el('div', null,
+      campo('fu-nome', 'Nome', f.nome, null, true), campo('fu-email', 'E-mail', f.email, u.id ? 'O e-mail não muda por aqui.' : null, true),
+      u.id ? null : campo('fu-senha', 'Senha inicial', f.senha, 'A pessoa troca no primeiro acesso.', true), campo('fu-perfil', 'Perfil', f.perfil),
+      u.id ? el('label', { class: 'checkbox' }, f.ativo, ' Acesso ativo (quem já entrou é desativado, nunca apagado)') : null),
+      [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), btn]);
+    btn.addEventListener('click', async () => {
+      if (!marcarErro(f.nome, f.nome.value.trim() ? '' : 'Informe o nome.')) return;
+      if (!u.id && !marcarErro(f.email, /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.value.trim()) ? '' : 'E-mail inválido.')) return;
+      if (!u.id && !marcarErro(f.senha, f.senha.value.length >= 8 ? '' : 'Pelo menos 8 caracteres.')) return;
+      ocupado(btn, 'Salvando…');
+      try {
+        if (u.id) await D.salvarUsuario({ id: u.id, nome: f.nome.value.trim(), perfil: f.perfil.value, ativo: f.ativo.checked });
+        else await D.criarUsuario({ nome: f.nome.value.trim(), email: f.email.value.trim().toLowerCase(), senha: f.senha.value, perfil: f.perfil.value });
+        d.close(); toast('Usuário salvo.'); rotear();
+      } catch (e) { toast(e.message, true); ocupado(btn); }
+    });
+  }
+
+  window.ADESOES = { iniciar };
+})();
