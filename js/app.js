@@ -535,7 +535,7 @@
       const org = b.orgaosPorId[r.orgao_id];
       // Saldos por item (sem as quantidades deste pedido)
       for (const tr of grupos.querySelectorAll('tr[data-linha]')) {
-        const i = b.itensPorId[tr.dataset.linha], cons = consumo(i.id);
+        const i = b.itensPorId[tr.dataset.linha], cons = consumo(i.id, r.substitui);
         const uo = org ? cons.porOrg[org.id] || 0 : null;
         const so = org ? Math.max(0, i.qtd_registrada * 0.5 - uo) : null, st = Math.max(0, i.qtd_registrada * 2 - cons.tot);
         const cso = tr.querySelector('[data-col=so]');
@@ -545,7 +545,7 @@
         tr.querySelector('[data-col=res]').replaceChildren(); tr.className = '';
       }
       const ls = linhas();
-      const res = org ? R.analisar(b, org, r.data_oficio, ls) : [];
+      const res = org ? R.analisar(b, org, r.data_oficio, ls, r.substitui) : [];
       let aut = 0, neg = 0, valor = 0;
       res.forEach((x) => {
         const tr = grupos.querySelector('tr[data-linha="' + x.item.id + '"]'); if (!tr) return;
@@ -582,26 +582,28 @@
       const pedido = { numero_oficio: num || null, data_oficio: r.data_oficio || hoje(), orgao_id: org.id, oficio_solicitante: r.oficio_solicitante || null, data_solicitante: r.data_solicitante || null,
         finalidade: r.finalidade.trim() || null, anexos_texto: r.anexos ? fAnexosTxt.value.trim() : null };
       if (previa) {
-        const res = R.analisar(b, org, pedido.data_oficio, ls).filter((x) => x.decisao !== 'invalido');
+        const res = R.analisar(b, org, pedido.data_oficio, ls, r.substitui).filter((x) => x.decisao !== 'invalido');
         const dados = { pedido, orgao: org, linhas: res, config: b.config };
         await baixar('PRÉVIA - ' + O.nomeArquivo(dados), await O.gerarDocx(dados)); return;
       }
-      if (!marcarErro(fNum, num ? (b.pedidos.some((p) => p.numero_oficio === num) ? 'Esse número já foi usado.' : '') : 'Informe o número do ofício do CIMOP.')) return;
-      const res = R.analisar(b, org, pedido.data_oficio, ls);
+      if (!marcarErro(fNum, num ? (b.pedidos.some((p) => p.numero_oficio === num && p.id !== r.substitui) ? 'Esse número já foi usado.' : '') : 'Informe o número do ofício do CIMOP.')) return;
+      const res = R.analisar(b, org, pedido.data_oficio, ls, r.substitui);
       const neg = res.filter((x) => x.decisao === 'negado').length;
-      const ok = await confirmar('Registrar o pedido', el('div', null,
+      const ok = await confirmar(r.substitui ? 'Gravar a correção' : 'Registrar o pedido', el('div', null,
         el('p', null, 'Ofício nº ', el('strong', null, num), ' para ', el('strong', null, org.nome), '.'),
+        r.substitui ? el('p', { class: 'msg msg-info' }, 'O pedido original fica no histórico como "substituído" e sai do saldo; este passa a valer com o mesmo número.') : null,
         el('p', null, res.length - neg + ' item(ns) autorizado(s) e ' + neg + ' negado(s). O saldo das atas é atualizado e o ofício em Word é baixado em seguida.'),
         neg ? el('p', { class: 'msg msg-falta' }, 'Itens negados entram no ofício com o motivo e o saldo disponível.') : null), 'Registrar e gerar ofício');
       if (!ok) return;
       ocupado(btnSalvar, 'Registrando…');
       try {
-        const id = await D.registrarPedido({ ...pedido, itens: ls });
+        const id = r.substitui ? await D.substituirPedido(r.substitui, { ...pedido, origem: r.origem || undefined, itens: ls.map((l) => ({ ...l, periodo: r.periodos && r.periodos[l.item_id] })) })
+          : await D.registrarPedido({ ...pedido, itens: ls });
         if (r.solicitacao_id) await D.atualizarSolicitacao(r.solicitacao_id, { situacao: 'atendida', pedido_id: id, orgao_id: org.id });
         await recarregar();
         const p = estado.base.pedidosPorId[id];
         rascunho = null;
-        toast('Pedido registrado: ' + SIT[p.situacao][0].toLowerCase() + '. Gerando o ofício…');
+        toast((p.substitui_id ? 'Correção gravada: ' : 'Pedido registrado: ') + SIT[p.situacao][0].toLowerCase() + '. Gerando o ofício…');
         location.hash = '#pedido-' + id;
         await baixarOficio(p);
       } catch (e) { toast(e.message, true); ocupado(btnSalvar); }
@@ -609,8 +611,11 @@
 
     const solOrigem = r.solicitacao_id && b.solicitacoes.find((x) => x.id === r.solicitacao_id);
     rc(c,
-      cabecalho('Novo pedido de adesão', 'Digite as quantidades pedidas: o sistema confere os limites na hora e gera o ofício ao registrar.',
+      cabecalho(r.substitui ? 'Corrigir pedido de adesão' : 'Novo pedido de adesão', 'Digite as quantidades pedidas: o sistema confere os limites na hora e gera o ofício ao registrar.',
         el('button', { type: 'button', class: 'btn btn-claro', onclick: async () => { if (await confirmar('Limpar o formulário', 'Apaga o que foi digitado neste pedido.', 'Limpar', true)) { rascunho = null; rotear(); } } }, 'Limpar')),
+      r.substitui && b.pedidosPorId[r.substitui] ? el('div', { class: 'msg msg-falta' }, el('strong', null, 'Corrigindo o Ofício nº ' + (b.pedidosPorId[r.substitui].numero_oficio || 's/n') + '. '),
+        'Ajuste itens e quantidades. Os limites são conferidos sem contar o pedido original. Ao gravar, o original fica no histórico como "substituído" e este passa a valer com o mesmo número. ',
+        el('a', { class: 'link', href: '#pedido-' + r.substitui, onclick: () => { rascunho = null; } }, 'Desistir da correção')) : null,
       solOrigem ? el('p', { class: 'msg msg-info' }, 'Lançando a solicitação ', el('strong', null, solOrigem.protocolo), ' recebida pelo formulário online. Confira as quantidades, informe o nº do ofício e registre: a solicitação fica como atendida.') : null,
       el('div', { class: 'grade grade-2' },
         el('section', { class: 'cartao' }, el('h2', null, 'Solicitante'),
@@ -759,11 +764,14 @@
     const acoes = [el('a', { class: 'btn btn-claro', href: '#pedidos' }, '‹ Pedidos'), btnWord];
     if (podeEditar() && p.situacao !== 'cancelado') {
       acoes.splice(1, 0, el('button', { type: 'button', class: 'btn btn-claro', onclick: () => editarPedido(p) }, 'Editar dados do ofício'),
+        el('button', { type: 'button', class: 'btn btn-claro', onclick: () => corrigirPedido(p) }, 'Corrigir itens e quantidades'),
         el('button', { type: 'button', class: 'btn btn-claro btn-texto-perigo', onclick: () => cancelarPedido(p) }, 'Cancelar pedido'));
     }
     rc(c,
       cabecalho('Ofício nº ' + (p.numero_oficio || 's/n'), o.nome, ...acoes),
-      p.situacao === 'cancelado' ? el('p', { class: 'msg msg-erro' }, 'Pedido cancelado: ' + (p.motivo_cancelamento || '') + ' O saldo voltou para as atas.') : null,
+      p.situacao === 'cancelado' ? el('p', { class: 'msg msg-erro' }, 'Pedido cancelado: ' + (p.motivo_cancelamento || '') + ' O saldo voltou para as atas.',
+        p.substituido_por && b.pedidosPorId[p.substituido_por] ? [' ', el('a', { class: 'link', href: '#pedido-' + p.substituido_por }, 'Ver o pedido corrigido')] : null) : null,
+      p.substitui_id && b.pedidosPorId[p.substitui_id] ? el('p', { class: 'msg msg-info' }, 'Este pedido corrige itens e quantidades de um lançamento anterior. ', el('a', { class: 'link', href: '#pedido-' + p.substitui_id }, 'Ver o original')) : null,
       p.origem === 'migracao' ? el('p', { class: 'msg msg-info' }, 'Pedido migrado da planilha antiga: as quantidades foram gravadas como autorizadas na época, sem nova conferência.') : null,
       el('div', { class: 'grade grade-2' },
         el('section', { class: 'cartao' }, el('h2', null, 'Dados do pedido'),
@@ -786,6 +794,19 @@
         el('p', { class: 'ajuda mt-05' }, 'Valor autorizado: R$ ' + R.moeda(valorPedido(p)))),
       p.origem !== 'migracao' ? cartaoEmails(p) : null);
   };
+
+  function corrigirPedido(p) {
+    const b = estado.base, qtd = {}, periodos = {}, atas = new Set();
+    for (const pi of b.pedido_itens.filter((x) => x.pedido_id === p.id)) {
+      const it = b.itensPorId[pi.item_id]; if (!it) continue;
+      qtd[pi.item_id] = String(Number(pi.qtd_solicitada)); atas.add(it.ata_id);
+      const per = pi.periodo_id && (b.periodos || []).find((x) => x.id === pi.periodo_id); if (per) periodos[pi.item_id] = per.numero;
+    }
+    rascunho = { ...novoRascunho(), orgao_id: p.orgao_id, numero_oficio: p.numero_oficio || '', data_oficio: p.data_oficio || hoje(), oficio_solicitante: p.oficio_solicitante || '',
+      data_solicitante: p.data_solicitante || '', finalidade: p.finalidade || '', anexos: p.anexos_texto != null, anexos_texto: p.anexos_texto, atas: [...atas], qtd,
+      substitui: p.id, origem: p.origem === 'migracao' ? 'migracao' : null, periodos };
+    location.hash = '#novo';
+  }
 
   function editarPedido(p) {
     const f = { num: txt(p.numero_oficio, { maxlength: 20 }), data: el('input', { type: 'date', value: p.data_oficio || '' }), sol: txt(p.oficio_solicitante, { maxlength: 40 }),

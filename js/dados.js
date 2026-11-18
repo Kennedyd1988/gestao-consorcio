@@ -119,6 +119,17 @@
         salvarLocal(); indexar(base); return ped.id;
       },
       async cancelarPedido(id, motivo) { const p = base.pedidos.find((x) => x.id === id); p.situacao = 'cancelado'; p.motivo_cancelamento = motivo; salvarLocal(); },
+      async substituirPedido(id, novo) {
+        const o = base.pedidos.find((x) => x.id === id);
+        if (!o || o.situacao === 'cancelado') throw new Error('Este pedido já foi cancelado ou substituído.');
+        const quando = new Date().toLocaleString('pt-BR');
+        const num = novo.numero_oficio || o.numero_oficio;
+        Object.assign(o, { situacao: 'cancelado', motivo_cancelamento: 'Substituído pela correção de itens e quantidades em ' + quando + '.', numero_oficio: o.numero_oficio ? o.numero_oficio + ' (substituído em ' + quando + ')' : null });
+        const nid = await api.registrarPedido({ ...novo, numero_oficio: num });
+        const n = base.pedidos.find((x) => x.id === nid); n.substitui_id = id; o.substituido_por = nid;
+        base.solicitacoes.forEach((s) => { if (s.pedido_id === id) s.pedido_id = nid; });
+        salvarLocal(); indexar(base); return nid;
+      },
       async importar(dados, aoProgredir) { const r = importarLocal(base, dados, aoProgredir, api); salvarLocal(); indexar(base); return r; },
       async publicoAtas() {
         await carregar();
@@ -307,6 +318,7 @@
       async salvarConfig(c) { const { id, atualizado_em, ...r } = c; ok(await sb.from('configuracoes').update({ ...r, atualizado_em: new Date().toISOString() }).eq('id', 1)); },
       async registrarPedido(p) { return ok(await sb.rpc('registrar_pedido', { p })); },
       async cancelarPedido(id, motivo) { ok(await sb.rpc('cancelar_pedido', { p_id: id, p_motivo: motivo })); },
+      async substituirPedido(id, p) { return ok(await sb.rpc('substituir_pedido', { p_id: id, p })); },
       async importar(d, aoProgredir) {
         const resumo = { atas: 0, itens: 0, orgaos: 0, pedidos: 0, ignorados: 0 };
         const atas = ok(await sb.from('atas').upsert(d.atas, { onConflict: 'numero' }).select());

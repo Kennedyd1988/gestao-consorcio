@@ -47,7 +47,7 @@
   };
 
   // linhas: [{item_id, qtd}]  -> resultado por linha, na ordem
-  R.analisar = function (base, orgao, dataOficio, linhas) {
+  R.analisar = function (base, orgao, dataOficio, linhas, ignorarPedidoId) {
     const acumOrg = {}, acumTot = {};
     return linhas.map((l) => {
       const item = base.itensPorId[l.item_id];
@@ -59,7 +59,7 @@
       const per = temPeriodos ? R.periodoNaData(base, item.ata_id, dataOficio) : null;
       const ciclo = temPeriodos ? (per ? R.cicloDe(base, per.id, item.ata_id) : R.cicloAtual(base, item.ata_id)) : null;
       res.periodo = per; res.periodo_id = per ? per.id : null; res.ciclo = ciclo;
-      const u = R.usado(base, item.id, orgao && orgao.id, null, ciclo);
+      const u = R.usado(base, item.id, orgao && orgao.id, ignorarPedidoId || null, ciclo);
       const uo = r4(u.org + (acumOrg[item.id] || 0)), ut = r4(u.tot + (acumTot[item.id] || 0));
       const reg = Number(item.qtd_registrada);
       Object.assign(res, {
