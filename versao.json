@@ -1,7 +1,8 @@
 {
-  "versao": "0.2.1",
+  "versao": "0.2.2",
   "data": "2026-11-17",
   "notas": [
+    "Mapa de adesões mais limpo: células brancas com quantidade e uma barrinha do uso dos 50% (cor só na barra; vermelho quando passa do limite), ofícios em etiquetas pequenas no cabeçalho, botão \"órgão(s)\" na linha do item e linha de valor autorizado discreta.",
     "Mapa de adesões: botão \"Aderentes\" em cada item abre uma tela própria com os órgãos que aderiram, ofícios, quantidade, uso dos 50%, saldo de cada órgão, valor e pedidos negados, com exportação para Excel.",
     "Campos de digitação sempre claros, mesmo com o computador ou o navegador em modo escuro (antes alguns ficavam pretos).",
     "Formulário online de solicitação de adesão (sem login): o órgão informa o CNPJ, vê o saldo disponível para ele em cada item, digita as quantidades, anexa o ofício em PDF e recebe um protocolo. As solicitações chegam em \"Solicitações recebidas\" e viram pedido com um clique. Rode o script 02 na Supabase.",

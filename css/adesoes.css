@@ -146,3 +146,43 @@ input[type="file"] { background: #fff; color: var(--text); }
 .btn-aderentes:hover { background: var(--brand); color: #fff; border-color: var(--brand); }
 .lista-oficios { list-style: none; padding: 0; font-size: 13.5px; }
 .lista-oficios li + li { margin-top: 2px; }
+
+/* Mapa – acabamento (0.2.2): células brancas com barrinha, cabeçalho em chips, rodapé discreto */
+.tabela-mapa td, .tabela-mapa th { padding: 8px 10px; }
+.tabela-mapa .mapa-item { min-width: 300px; max-width: 360px; }
+.mapa-item-linha { display: flex; align-items: flex-start; gap: 8px; }
+.mapa-item-linha .mapa-num { flex: none; min-width: 24px; padding-top: 1px; }
+.mapa-item-linha .mapa-desc { flex: 1; width: auto !important; display: -webkit-box !important; font-size: 13.5px; line-height: 1.35; }
+.btn-aderentes { flex: none; margin: 0; font-size: 11.5px; padding: 1px 8px; white-space: nowrap; }
+.tabela-mapa .mapa-col { min-width: 112px; max-width: 132px; vertical-align: bottom; padding-bottom: 10px; }
+.tabela-mapa .mapa-col-nome { display: block; font-size: 13px; font-weight: 700; color: var(--text); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tabela-mapa .mapa-col-nome:hover { color: var(--brand); text-decoration: underline; }
+.mapa-col-oficios { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; margin-top: 5px; }
+.mapa-chip { display: inline-block; font-size: 10.5px; font-weight: 600; line-height: 1.5; padding: 0 6px; border-radius: 99px; background: #fff; border: 1px solid #d3e0ef; color: var(--text-dim); text-decoration: none; white-space: nowrap; }
+a.mapa-chip:hover { border-color: var(--brand); color: var(--brand); }
+.mapa-chip-org { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.mapa-cel { background: #fff !important; color: var(--text) !important; box-shadow: none !important; border-left: 1px solid #f0f4f9; vertical-align: middle; text-align: center; padding: 7px 10px !important; }
+.mapa-cel.vazia { background: #fcfdfe !important; }
+.mapa-cel .mapa-v { font-size: 13px; font-weight: 600; color: var(--text); }
+.mapa-uso { display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 3px; }
+.mapa-trilho { width: 44px; height: 4px; border-radius: 99px; background: #e6edf5; overflow: hidden; }
+.mapa-trilho i { display: block; height: 100%; border-radius: 99px; background: #2f9e6e; }
+.mapa-cel .mapa-p { display: inline; font-size: 10.5px; color: var(--text-dim); opacity: 1; font-family: var(--fonte-num); }
+.mapa-cel.uso-medio .mapa-trilho i { background: #16875a; }
+.mapa-cel.uso-alto .mapa-trilho i { background: #d99a1c; }
+.mapa-cel.uso-alto .mapa-p { color: #8a5a06; }
+.mapa-cel.uso-excedido { background: #fdf0f0 !important; }
+.mapa-cel.uso-excedido .mapa-trilho i { background: var(--red); }
+.mapa-cel.uso-excedido .mapa-v, .mapa-cel.uso-excedido .mapa-p { color: #8f2626; font-weight: 700; }
+.tabela-mapa tfoot td, .tabela-mapa tfoot th { background: #f6f9fc !important; border-top: 1px solid #dfe8f2; }
+.tabela-mapa tfoot .mapa-item { font-size: 13px; font-weight: 700; text-transform: none; letter-spacing: 0; }
+.tabela-mapa tfoot .mapa-item .sub-linha { font-weight: 400; font-size: 11.5px; }
+.mapa-valor { text-align: center; font-family: var(--fonte-num); font-size: 12px; font-weight: 500; color: var(--text-dim); white-space: nowrap; }
+.mapa-valor span { font-size: 10px; margin-right: 3px; opacity: .8; }
+.mapa-valor-total { color: var(--text); font-weight: 700; }
+.mapa-legenda i { display: inline-flex; align-items: center; gap: 5px; background: transparent !important; color: var(--text-dim) !important; box-shadow: none !important; padding: 0 4px; }
+.mapa-legenda i::before { content: ""; width: 18px; height: 4px; border-radius: 99px; background: #2f9e6e; }
+.mapa-legenda i.uso-medio::before { background: #16875a; }
+.mapa-legenda i.uso-alto::before { background: #d99a1c; }
+.mapa-legenda i.uso-excedido::before { background: var(--red); }
+.tabela-mapa .mapa-col-nome { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.25; }
