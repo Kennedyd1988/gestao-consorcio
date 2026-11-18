@@ -1143,7 +1143,9 @@
         el('p', null, el('a', { class: 'link', href: '#consultar' }, 'Já enviou? Consulte o andamento pelo protocolo'),
           estado.usuario ? [' · ', el('a', { class: 'link', href: '#solicitacoes' }, 'Voltar ao painel do CIMOP')] : null)),
       passo(1, 'Órgão solicitante', campo('sp-cnpj', 'CNPJ do órgão ou entidade', fCnpj, 'Cada CNPJ tem limite próprio de 50% do registrado por item.', true), fichaOrg, blocoDados),
-      passo(2, 'Ata e quantidades', campo('sp-ata', 'Ata de registro de preços', selAta, atas.length ? 'Só aparecem atas vigentes. Pode juntar itens de mais de uma ata: escolha outra e continue.' : 'Nenhuma ata vigente no momento.'), areaItens, resumo),
+      passo(2, 'Ata e quantidades', atas.length
+        ? [campo('sp-ata', 'Ata de registro de preços', selAta, 'Só aparecem atas vigentes. Pode juntar itens de mais de uma ata: escolha outra e continue.'), areaItens, resumo]
+        : el('p', { class: 'msg msg-info' }, 'No momento não há ata de registro de preços vigente disponível para adesão. Em caso de dúvida, fale com o CIMOP pelo e-mail cimop.rn@gmail.com.')),
       passo(3, 'Ofício e documentos',
         el('div', { class: 'grade-campos' }, campo('sp-of', 'Nº do ofício de solicitação', fOf, null, true), campo('sp-ofdata', 'Data do ofício', fOfData)),
         campo('sp-fin', 'Finalidade da adesão', fFin, 'Para que serão usados os itens. Entra no ofício de resposta.'),

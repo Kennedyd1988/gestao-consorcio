@@ -1,7 +1,8 @@
 {
-  "versao": "0.3.0",
+  "versao": "0.3.1",
   "data": "2026-11-17",
   "notas": [
+    "Formulário público: quando não há ata vigente cadastrada, aparece um aviso no lugar da lista vazia.",
     "O sistema passa a se chamar Gestão de Consórcio (SOFT+ GOV), para receber outros módulos além das adesões às atas. Repositório: gestao-consorcio.",
     "Mapa de adesões mais limpo: células brancas com quantidade e uma barrinha do uso dos 50% (cor só na barra; vermelho quando passa do limite), ofícios em etiquetas pequenas no cabeçalho, botão \"órgão(s)\" na linha do item e linha de valor autorizado discreta.",
     "Mapa de adesões: botão \"Aderentes\" em cada item abre uma tela própria com os órgãos que aderiram, ofícios, quantidade, uso dos 50%, saldo de cada órgão, valor e pedidos negados, com exportação para Excel.",
