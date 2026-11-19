@@ -3,7 +3,7 @@
 // (divulgação, lembrete, resultado), SÓ quando o usuário revisa e clica em "Enviar" no painel.
 // Registra cada envio em consorcio.emails (com pedido_id ou irp_id/orgao_id).
 // Usa o SMTP já configurado no projeto (secrets SMTP_HOST, SMTP_PORT, SMTP_USUARIO, SMTP_SENHA,
-// SMTP_REMETENTE). Opcional: CONSORCIO_SMTP_REMETENTE, ex.: "CIMOP <adesoes@cimop.rn.gov.br>".
+// SMTP_REMETENTE). Opcional: CONSORCIO_SMTP_REMETENTE. O nome do remetente é a sigla do consórcio de quem envia.
 // Publicar com "Verify JWT" DESLIGADO (a conferência do usuário é feita aqui).
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import nodemailer from 'npm:nodemailer@6';
@@ -27,11 +27,21 @@ Deno.serve(async (req) => {
     const token = (req.headers.get('Authorization') || '').replace('Bearer ', '');
     const { data: quem } = await sb.auth.getUser(token);
     if (!quem?.user) return resposta({ erro: 'Entre novamente no sistema.' }, 401);
-    const { data: u } = await sb.from('usuarios').select('perfil, ativo, nome').eq('id', quem.user.id).maybeSingle();
+    const { data: u } = await sb.from('usuarios').select('*').eq('id', quem.user.id).maybeSingle();
+    if (!u || !u.ativo) return resposta({ erro: 'Sem permissão para enviar e-mails.' }, 403);
+    // Vários consórcios (script 15): vale o perfil no consórcio em que a pessoa está
+    const consorcio: string | null = u.consorcio_atual ?? null;
+    let perfilGeral = u.perfil;
+    if (consorcio) {
+      const { data: v } = await sb.from('usuario_consorcios').select('perfil, ativo').eq('usuario_id', u.id).eq('consorcio_id', consorcio).maybeSingle();
+      perfilGeral = u.suporte ? 'administrador' : (v && v.ativo ? v.perfil : null);
+    }
     // Pode enviar quem edita algum módulo (perfil geral ou perfil por módulo: administrador ou operador)
-    const { data: mods } = await sb.from('usuario_modulos').select('perfil').eq('usuario_id', quem.user.id);
+    let qm = sb.from('usuario_modulos').select('perfil').eq('usuario_id', quem.user.id);
+    if (consorcio) qm = qm.eq('consorcio_id', consorcio);
+    const { data: mods } = await qm;
     const editaModulo = (mods || []).some((m: any) => ['administrador', 'operador'].includes(m.perfil));
-    if (!u || !u.ativo || (!['administrador', 'operador'].includes(u.perfil) && !editaModulo)) return resposta({ erro: 'Sem permissão para enviar e-mails.' }, 403);
+    if (!perfilGeral || (!['administrador', 'operador'].includes(perfilGeral) && !editaModulo)) return resposta({ erro: 'Sem permissão para enviar e-mails.' }, 403);
 
     const b = await req.json();
     const para = lista(b.para), copia = lista(b.copia);
@@ -47,10 +57,15 @@ Deno.serve(async (req) => {
     if (!host) return resposta({ erro: 'O envio de e-mail ainda não está configurado no servidor (SMTP).' }, 503);
     const porta = Number(Deno.env.get('SMTP_PORT') ?? '587');
     const envio = nodemailer.createTransport({ host, port: porta, secure: porta === 465, auth: { user: Deno.env.get('SMTP_USUARIO'), pass: Deno.env.get('SMTP_SENHA') } });
-    const { data: cfg } = await sb.from('configuracoes').select('email_resposta, sigla').eq('id', 1).single();
-    const remetente = Deno.env.get('CONSORCIO_SMTP_REMETENTE') || Deno.env.get('SMTP_REMETENTE');
+    const { data: cfg } = consorcio
+      ? await sb.from('configuracoes').select('email_resposta, sigla, orgao_nome').eq('consorcio_id', consorcio).single()
+      : await sb.from('configuracoes').select('email_resposta, sigla, orgao_nome').eq('id', 1).single();
+    // Remetente: o endereço configurado no servidor, com o nome do consórcio de quem envia
+    const bruto = Deno.env.get('CONSORCIO_SMTP_REMETENTE') || Deno.env.get('SMTP_REMETENTE') || '';
+    const endereco = (bruto.match(/<([^>]+)>/) || [null, bruto])[1].trim();
+    const remetente = cfg?.sigla && endereco ? `"${String(cfg.sigla).replace(/"/g, '')}" <${endereco}>` : bruto;
 
-    const registro = { pedido_id: b.pedido_id || null, irp_id: b.irp_id || null, orgao_id: b.orgao_id || null, para: para.join(', '), copia: copia.join(', ') || null, assunto: b.assunto, corpo: b.corpo,
+    const registro = { ...(consorcio ? { consorcio_id: consorcio } : {}), pedido_id: b.pedido_id || null, irp_id: b.irp_id || null, orgao_id: b.orgao_id || null, para: para.join(', '), copia: copia.join(', ') || null, assunto: b.assunto, corpo: b.corpo,
       anexos: (b.anexos || []).map((a: any) => a.nome), enviado_por: quem.user.id, enviado_por_nome: u.nome };
     try {
       await envio.sendMail({ from: remetente, to: para, cc: copia.length ? copia : undefined, replyTo: cfg?.email_resposta || undefined,

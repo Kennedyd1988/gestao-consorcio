@@ -70,10 +70,10 @@
     {
       id: 'sistema',
       nome: 'Sistema',
-      descricao: 'Quem entra no sistema e quais módulos cada pessoa vê, com o perfil em cada um.',
+      descricao: 'Quem entra no sistema e quais módulos cada pessoa vê, com o perfil em cada um. Para o Suporte SOFT+, também o cadastro dos consórcios.',
       cor: '#4f6378',
       inicio: '#usuarios',
-      rotas: ['usuarios'],
+      rotas: ['usuarios', 'consorcios'],
       soAdminSistema: true,
     },
   ];

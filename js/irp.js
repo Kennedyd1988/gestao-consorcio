@@ -26,7 +26,7 @@
   const ORIGEM = { formulario: 'Formulário', etp: 'Demanda do ETP', inclusao_posterior: 'Inclusão posterior' };
   const RESULTADO = { aceita: 'Aceita', ajustada: 'Aceita com ajuste', recusada: 'Recusada' };
   const VINCULO = DOC.VINCULO;
-  const linkFormulario = (irp) => location.href.split('#')[0] + '#manifestar-' + irp.id;
+  const linkFormulario = (irp) => location.origin + location.pathname + (N.ident().sigla ? '?c=' + encodeURIComponent(N.ident().sigla) : '') + '#manifestar-' + irp.id;
 
   // Tabela que vira cartões no celular (mesmo padrão do Cadastro)
   function tabela(cab, linhas, extra) {
@@ -820,7 +820,7 @@ ${cf.sigla || SG()}`;
 
   async function verResultado(protocolo) {
     try {
-      const r = await D.publicoIrpConsultar(protocolo, pub.cnpj);
+      const r = await D.publicoIrpConsultar(protocolo, pub.cnpj, pub.irp && pub.irp.id);
       if (!r) { toast('Não encontrado.', true); return; }
       abrirDialogo('Resultado · protocolo ' + r.protocolo, el('div', null,
         el('p', null, el('strong', null, r.orgao), ' · IRP nº ' + r.irp + ' · ', RESULTADO[r.resultado] || 'Em análise'),

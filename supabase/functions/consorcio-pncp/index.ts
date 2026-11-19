@@ -120,174 +120,195 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { db: { schema: 'consorcio' } });
   try {
-    // ---- quem chamou
-    const { data: cfg } = await sb.from('pncp_config').select('*').eq('id', 1).single();
+    // ---- quem chamou: a agenda (chave de sincronização) roda todos os consórcios; o botão roda o consórcio de quem clicou
+    const { data: cfgs } = await sb.from('pncp_config').select('*').order('id');
     const chave = req.headers.get('x-chave-sinc');
     let origem = 'agenda';
-    if (!chave || chave !== cfg.chave_sinc) {
+    let lista: any[] = cfgs || [];
+    if (!chave || !lista.some((c: any) => c.chave_sinc === chave)) {
       const token = (req.headers.get('Authorization') || '').replace('Bearer ', '');
       const { data: quem } = await sb.auth.getUser(token);
       if (!quem?.user) return resposta({ erro: 'Não autorizado.' }, 401);
-      const { data: u } = await sb.from('usuarios').select('perfil, ativo, nome').eq('id', quem.user.id).maybeSingle();
-      if (!u || !u.ativo || !['administrador', 'operador'].includes(u.perfil)) return resposta({ erro: 'Sem permissão.' }, 403);
-      origem = 'manual: ' + u.nome;
-    }
-    const cnpj = cfg.cnpj;
-    const res = { atas_pncp: 0, novas: 0, prorrogacoes: 0, reequilibrios: 0, cancelamentos: 0, documentos_lidos: 0, orgaos_pncp: 0, erros: [] as string[] };
-
-    // ---- 1. atas do órgão no PNCP (janelas de até 365 dias)
-    const vistas = new Map<string, any>();
-    let ini = new Date(cfg.desde + 'T00:00:00Z');
-    const hoje = new Date();
-    while (ini <= hoje) {
-      const fim = new Date(Math.min(ini.getTime() + 364 * 86400000, hoje.getTime() + 400 * 86400000));
-      for (let pag = 1; pag < 20; pag++) {
-        const j = await pegar(`${API}/consulta/v1/atas?dataInicial=${compacta(iso(ini))}&dataFinal=${compacta(iso(fim))}&cnpj=${cnpj}&pagina=${pag}`);
-        for (const a of (j && j.data) || []) vistas.set(a.numeroControlePNCPAta, a);
-        if (!j || !j.paginasRestantes) break;
+      const { data: u } = await sb.from('usuarios').select('*').eq('id', quem.user.id).maybeSingle();
+      const cons = u?.consorcio_atual ?? null;
+      let perfil = u?.perfil;
+      if (u && cons) {
+        const { data: v } = await sb.from('usuario_consorcios').select('perfil, ativo').eq('usuario_id', u.id).eq('consorcio_id', cons).maybeSingle();
+        perfil = u.suporte ? 'administrador' : (v && v.ativo ? v.perfil : null);
       }
-      ini = new Date(fim.getTime() + 86400000);
+      if (!u || !u.ativo || !['administrador', 'operador'].includes(perfil)) return resposta({ erro: 'Sem permissão.' }, 403);
+      origem = 'manual: ' + u.nome;
+      lista = cons ? lista.filter((c: any) => c.consorcio_id === cons) : lista.slice(0, 1);
     }
-    res.atas_pncp = vistas.size;
-
-    const { data: atas } = await sb.from('atas').select('*');
-    const { data: periodos } = await sb.from('periodos').select('*');
-    const { data: itens } = await sb.from('itens').select('id, ata_id, numero, preco_unitario');
-    const { data: docsVistos } = await sb.from('pncp_documentos').select('url');
-    const lidos = new Set((docsVistos || []).map((d: any) => d.url));
-    const propor = async (p: any) => {
-      const { error } = await sb.from('pncp_atualizacoes').upsert(p, { onConflict: 'chave', ignoreDuplicates: true });
-      if (error) res.erros.push(error.message);
-    };
-
-    for (const [controle, a] of vistas) {
+    const resultados: any[] = [];
+    for (const cfg of lista) {
+      if (!cfg.cnpj) continue;
+      const cid: string | null = cfg.consorcio_id ?? null;
+      const daqui = (q: any) => (cid ? q.eq('consorcio_id', cid) : q);
+      const comCid = (o: any) => (cid ? { ...o, consorcio_id: cid } : o);
       try {
-        const pt = partes(controle); if (!pt) continue;
-        const numero = numeroAta(a.numeroAtaRegistroPreco, a.anoAta);
-        let ata = (atas || []).find((x: any) => x.numero_controle_pncp === controle) || (atas || []).find((x: any) => x.numero === numero);
-        if (ata && !ata.numero_controle_pncp) await sb.from('atas').update({ numero_controle_pncp: controle }).eq('id', ata.id);
-        const base = `${API}/pncp/v1/orgaos/${pt.cnpj}/compras/${pt.ano}/${pt.seq}`;
+        const cnpj = cfg.cnpj;
+        const res = { atas_pncp: 0, novas: 0, prorrogacoes: 0, reequilibrios: 0, cancelamentos: 0, documentos_lidos: 0, orgaos_pncp: 0, erros: [] as string[] };
 
-        // ---- 2. ata nova
-        if (!ata) {
-          if (a.cancelado) continue;
-          if (a.vigenciaFim && a.vigenciaFim.slice(0, 10) < iso(hoje)) continue;   // ata vencida: não interessa
-          const det = await talvez(`${base}/atas/${pt.ata}`);
-          if (!det || det.possibilidadeAdesao !== true) continue;   // só atas que permitem adesão (dispensas etc. ficam de fora)
-          const compra = await talvez(`${API}/consulta/v1/orgaos/${pt.cnpj}/compras/${pt.ano}/${pt.seq}`);   // o detalhe da compra mudou para a API de consulta
-          const lista = (await talvez(`${base}/itens?pagina=1&tamanhoPagina=500`)) || [];
-          const grupos: Record<string, any> = {};
-          for (const it of lista) {
-            if (!it.temResultado) continue;
-            const rs = (await talvez(`${base}/itens/${it.numeroItem}/resultados`)) || [];
-            for (const r of rs) {
-              const g = (grupos[r.niFornecedor] ||= { cnpj: r.niFornecedor, nome: r.nomeRazaoSocialFornecedor, itens: [] });
-              g.itens.push({ numero: it.numeroItem, descricao: String(it.descricao || '').split('. Especificação')[0].slice(0, 300), unidade: it.unidadeMedida,
-                qtd: Number(r.quantidadeHomologada || it.quantidade), preco: Number(r.valorUnitarioHomologado) });
-            }
+        // ---- 1. atas do órgão no PNCP (janelas de até 365 dias)
+        const vistas = new Map<string, any>();
+        let ini = new Date(cfg.desde + 'T00:00:00Z');
+        const hoje = new Date();
+        while (ini <= hoje) {
+          const fim = new Date(Math.min(ini.getTime() + 364 * 86400000, hoje.getTime() + 400 * 86400000));
+          for (let pag = 1; pag < 20; pag++) {
+            const j = await pegar(`${API}/consulta/v1/atas?dataInicial=${compacta(iso(ini))}&dataFinal=${compacta(iso(fim))}&cnpj=${cnpj}&pagina=${pag}`);
+            for (const a of (j && j.data) || []) vistas.set(a.numeroControlePNCPAta, a);
+            if (!j || !j.paginasRestantes) break;
           }
-          const lg = Object.values(grupos).sort((x: any, y: any) => x.itens[0].numero - y.itens[0].numero);
-          const doAta = lg.length === 1 ? lg[0] : (lg[pt.ata - 1] || lg[0]);
-          await propor({
-            chave: 'nova:' + controle, tipo: 'nova_ata', ata_numero: numero, numero_controle: controle,
-            resumo: `ARP ${numero} publicada no PNCP${doAta ? ' – ' + doAta.nome : ''} (${(doAta?.itens || []).length} item(ns)).`,
-            dados: { numero, pregao: compra?.numeroCompra ? numeroAta(compra.numeroCompra, compra.anoCompra) : null, processo: compra?.processo || null,
-              objeto: a.objetoContratacao || compra?.objetoCompra || null, detentora: doAta?.nome || null, cnpj_detentora: doAta?.cnpj || null,
-              data_assinatura: a.dataAssinatura, inicio: a.vigenciaInicio, fim: a.vigenciaFim, itens: doAta?.itens || [],
-              grupos: lg.length > 1 ? lg : undefined,
-              aviso: lg.length > 1 ? 'A licitação tem mais de um contratado: confira se o contratado escolhido é o desta ata.' : !lg.length ? 'O PNCP não devolveu os itens e o resultado desta licitação. Confira os dados e cadastre os itens na tela da ata depois de confirmar.' : undefined },
-          });
-          res.novas++;
-          continue;
+          ini = new Date(fim.getTime() + 86400000);
         }
+        res.atas_pncp = vistas.size;
 
-        // ---- 3. cancelamento
-        if (a.cancelado && ata.ativo !== false) {
-          await propor({ chave: 'cancel:' + controle, tipo: 'cancelamento', ata_id: ata.id, ata_numero: ata.numero, numero_controle: controle,
-            resumo: `ARP ${ata.numero} consta como cancelada no PNCP.`, dados: { data: a.dataCancelamento } });
-          res.cancelamentos++;
-        }
+        const { data: atas } = await daqui(sb.from('atas').select('*'));
+        const { data: periodos } = await daqui(sb.from('periodos').select('*'));
+        const { data: itens } = await daqui(sb.from('itens').select('id, ata_id, numero, preco_unitario'));
+        const { data: docsVistos } = await daqui(sb.from('pncp_documentos').select('url'));
+        const lidos = new Set((docsVistos || []).map((d: any) => d.url));
+        const propor = async (p: any) => {
+          const { error } = await sb.from('pncp_atualizacoes').upsert(comCid(p), { onConflict: cid ? 'consorcio_id,chave' : 'chave', ignoreDuplicates: true });
+          if (error) res.erros.push(error.message);
+        };
 
-        // ---- 3b. órgãos/entidades da ata no PNCP (gerenciadora, participantes e não participantes)
-        {
-          const partes: any[] = []; let lidoOk = false;
-          for (let pag = 1; pag <= 20; pag++) {
-            const j = await talvez(`${base}/atas/${pt.ata}/partesenvolvidas?pagina=${pag}&tamanhoPagina=50`);
-            if (!j) break;
-            lidoOk = true;
-            const lista = j.data || [];
-            partes.push(...lista);
-            if (!lista.length || partes.length >= Number(j.totalRegistros || 0)) break;
-          }
-          if (lidoOk) {
-            const linhas = new Map<string, any>();
-            for (const x of partes) {
-              const cnpj = String(x.orgao?.cnpj || '').replace(/\D/g, ''); const tipo = x.tipoParteEnvolvida?.nome || 'Outro';
-              if (!cnpj) continue;
-              linhas.set(cnpj + '|' + tipo, { ata_id: ata.id, cnpj, tipo, nome: x.orgao?.nome || null, unidade: x.unidade?.nomeUnidade || null,
-                municipio: x.unidade?.localidade?.nomeMunicipio || null, uf: x.unidade?.localidade?.uf || null, incluido_em: x.dataInclusao || null, lido_em: new Date().toISOString() });
-            }
-            await sb.from('pncp_partes').delete().eq('ata_id', ata.id);
-            if (linhas.size) { const { error } = await sb.from('pncp_partes').insert([...linhas.values()]); if (error) res.erros.push('Órgãos da ARP ' + ata.numero + ': ' + error.message); }
-            res.orgaos_pncp += [...linhas.values()].filter((l) => l.tipo === 'Não Participante').length;
-          }
-        }
-
-        // ---- 4. termos aditivos (prorrogação e reequilíbrio)
-        const arquivos = (await talvez(`${base}/atas/${pt.ata}/arquivos`)) || [];
-        const ps = (periodos || []).filter((p: any) => p.ata_id === ata.id).sort((x: any, y: any) => x.numero - y.numero);
-        const fimSistema = ps.length ? ps[ps.length - 1].fim : ata.vigencia_fim;
-        let prorrogacaoPelaVigencia = a.vigenciaFim && fimSistema && a.vigenciaFim > fimSistema;
-        for (const arq of arquivos) {
-          const url = arq.url; const titulo = arq.titulo || '';
-          if (lidos.has(url)) continue;
-          if (!/aditiv|apostil|reequil|prorrog|renova/i.test(titulo)) { await sb.from('pncp_documentos').upsert({ url, titulo, ata_id: ata.id, resultado: 'sem interesse' }); continue; }
-          let texto = '';
+        for (const [controle, a] of vistas) {
           try {
-            const bin = new Uint8Array(await (await fetch(url)).arrayBuffer());
-            const pdf = await getDocumentProxy(bin);
-            texto = (await extractText(pdf, { mergePages: true })).text as string;
-          } catch (e) { res.erros.push('PDF ' + titulo + ': ' + (e as Error).message); continue; }
-          res.documentos_lidos++;
-          const an = analisarAditivo(texto);
-          const achados: string[] = [];
-          if (an.prorrogacao) {
-            const inicio = an.inicio || (fimSistema ? somaDias(fimSistema, 1) : null);
-            const fim = an.fim || a.vigenciaFim;
-            const jaTem = ps.some((p: any) => p.fim === fim);
-            if (!jaTem && fim && (!fimSistema || fim > fimSistema)) {
-              await propor({ chave: 'prorr:' + url, tipo: 'prorrogacao', ata_id: ata.id, ata_numero: ata.numero, numero_controle: controle,
-                resumo: `ARP ${ata.numero} prorrogada até ${fim.split('-').reverse().join('/')}` + (an.renova ? ', com renovação dos quantitativos' : an.renova === false ? ', sem renovação dos quantitativos' : ' (renovação dos quantitativos não identificada: confira)') + '.',
-                dados: { inicio, fim, renova: !!an.renova, renova_lido: an.renova, instrumento: an.instrumento || titulo, trecho: an.trecho },
-                documento_titulo: titulo, documento_url: url });
-              res.prorrogacoes++; prorrogacaoPelaVigencia = false; achados.push('prorrogação');
-            } else if (jaTem) { prorrogacaoPelaVigencia = false; achados.push('prorrogação já cadastrada'); }
-          }
-          if (an.precos.length) {
-            const mudam = an.precos.filter((p) => { const it = (itens || []).find((i: any) => i.ata_id === ata.id && i.numero === p.numero); return !it || Math.abs(Number(it.preco_unitario) - p.preco_novo) > 0.004; });
-            if (mudam.length) {
-              await propor({ chave: 'reeq:' + url, tipo: 'reequilibrio', ata_id: ata.id, ata_numero: ata.numero, numero_controle: controle,
-                resumo: `ARP ${ata.numero}: novo preço em ${mudam.length} item(ns) (${an.instrumento || 'termo aditivo'}).`,
-                dados: { itens: mudam, instrumento: an.instrumento || titulo }, documento_titulo: titulo, documento_url: url });
-              res.reequilibrios++; achados.push('reequilíbrio');
-            } else achados.push('preços já atualizados');
-          }
-          await sb.from('pncp_documentos').upsert({ url, titulo, ata_id: ata.id, resultado: achados.join(', ') || 'nada identificado' });
-        }
-        // Vigência estendida no PNCP sem aditivo legível: propõe a prorrogação para conferir
-        if (prorrogacaoPelaVigencia) {
-          await propor({ chave: 'vig:' + controle + ':' + a.vigenciaFim, tipo: 'prorrogacao', ata_id: ata.id, ata_numero: ata.numero, numero_controle: controle,
-            resumo: `ARP ${ata.numero}: o PNCP mostra vigência até ${a.vigenciaFim.split('-').reverse().join('/')}, mas o termo aditivo não foi lido. Confira se renovou os quantitativos.`,
-            dados: { inicio: fimSistema ? somaDias(fimSistema, 1) : a.vigenciaInicio, fim: a.vigenciaFim, renova: false, renova_lido: null } });
-          res.prorrogacoes++;
-        }
-      } catch (e) { res.erros.push(controle + ': ' + (e as Error).message); }
-    }
+            const pt = partes(controle); if (!pt) continue;
+            const numero = numeroAta(a.numeroAtaRegistroPreco, a.anoAta);
+            let ata = (atas || []).find((x: any) => x.numero_controle_pncp === controle) || (atas || []).find((x: any) => x.numero === numero);
+            if (ata && !ata.numero_controle_pncp) await sb.from('atas').update({ numero_controle_pncp: controle }).eq('id', ata.id);
+            const base = `${API}/pncp/v1/orgaos/${pt.cnpj}/compras/${pt.ano}/${pt.seq}`;
 
-    await sb.from('pncp_config').update({ ultima_execucao: new Date().toISOString(), ultimo_resultado: { ...res, origem } }).eq('id', 1);
-    return resposta({ ok: true, ...res });
+            // ---- 2. ata nova
+            if (!ata) {
+              if (a.cancelado) continue;
+              if (a.vigenciaFim && a.vigenciaFim.slice(0, 10) < iso(hoje)) continue;   // ata vencida: não interessa
+              const det = await talvez(`${base}/atas/${pt.ata}`);
+              if (!det || det.possibilidadeAdesao !== true) continue;   // só atas que permitem adesão (dispensas etc. ficam de fora)
+              const compra = await talvez(`${API}/consulta/v1/orgaos/${pt.cnpj}/compras/${pt.ano}/${pt.seq}`);   // o detalhe da compra mudou para a API de consulta
+              const lista = (await talvez(`${base}/itens?pagina=1&tamanhoPagina=500`)) || [];
+              const grupos: Record<string, any> = {};
+              for (const it of lista) {
+                if (!it.temResultado) continue;
+                const rs = (await talvez(`${base}/itens/${it.numeroItem}/resultados`)) || [];
+                for (const r of rs) {
+                  const g = (grupos[r.niFornecedor] ||= { cnpj: r.niFornecedor, nome: r.nomeRazaoSocialFornecedor, itens: [] });
+                  g.itens.push({ numero: it.numeroItem, descricao: String(it.descricao || '').split('. Especificação')[0].slice(0, 300), unidade: it.unidadeMedida,
+                    qtd: Number(r.quantidadeHomologada || it.quantidade), preco: Number(r.valorUnitarioHomologado) });
+                }
+              }
+              const lg = Object.values(grupos).sort((x: any, y: any) => x.itens[0].numero - y.itens[0].numero);
+              const doAta = lg.length === 1 ? lg[0] : (lg[pt.ata - 1] || lg[0]);
+              await propor({
+                chave: 'nova:' + controle, tipo: 'nova_ata', ata_numero: numero, numero_controle: controle,
+                resumo: `ARP ${numero} publicada no PNCP${doAta ? ' – ' + doAta.nome : ''} (${(doAta?.itens || []).length} item(ns)).`,
+                dados: { numero, pregao: compra?.numeroCompra ? numeroAta(compra.numeroCompra, compra.anoCompra) : null, processo: compra?.processo || null,
+                  objeto: a.objetoContratacao || compra?.objetoCompra || null, detentora: doAta?.nome || null, cnpj_detentora: doAta?.cnpj || null,
+                  data_assinatura: a.dataAssinatura, inicio: a.vigenciaInicio, fim: a.vigenciaFim, itens: doAta?.itens || [],
+                  grupos: lg.length > 1 ? lg : undefined,
+                  aviso: lg.length > 1 ? 'A licitação tem mais de um contratado: confira se o contratado escolhido é o desta ata.' : !lg.length ? 'O PNCP não devolveu os itens e o resultado desta licitação. Confira os dados e cadastre os itens na tela da ata depois de confirmar.' : undefined },
+              });
+              res.novas++;
+              continue;
+            }
+
+            // ---- 3. cancelamento
+            if (a.cancelado && ata.ativo !== false) {
+              await propor({ chave: 'cancel:' + controle, tipo: 'cancelamento', ata_id: ata.id, ata_numero: ata.numero, numero_controle: controle,
+                resumo: `ARP ${ata.numero} consta como cancelada no PNCP.`, dados: { data: a.dataCancelamento } });
+              res.cancelamentos++;
+            }
+
+            // ---- 3b. órgãos/entidades da ata no PNCP (gerenciadora, participantes e não participantes)
+            {
+              const partes: any[] = []; let lidoOk = false;
+              for (let pag = 1; pag <= 20; pag++) {
+                const j = await talvez(`${base}/atas/${pt.ata}/partesenvolvidas?pagina=${pag}&tamanhoPagina=50`);
+                if (!j) break;
+                lidoOk = true;
+                const lista = j.data || [];
+                partes.push(...lista);
+                if (!lista.length || partes.length >= Number(j.totalRegistros || 0)) break;
+              }
+              if (lidoOk) {
+                const linhas = new Map<string, any>();
+                for (const x of partes) {
+                  const cnpj = String(x.orgao?.cnpj || '').replace(/\D/g, ''); const tipo = x.tipoParteEnvolvida?.nome || 'Outro';
+                  if (!cnpj) continue;
+                  linhas.set(cnpj + '|' + tipo, { ata_id: ata.id, cnpj, tipo, nome: x.orgao?.nome || null, unidade: x.unidade?.nomeUnidade || null,
+                    municipio: x.unidade?.localidade?.nomeMunicipio || null, uf: x.unidade?.localidade?.uf || null, incluido_em: x.dataInclusao || null, lido_em: new Date().toISOString() });
+                }
+                await sb.from('pncp_partes').delete().eq('ata_id', ata.id);
+                if (linhas.size) { const { error } = await sb.from('pncp_partes').insert([...linhas.values()].map(comCid)); if (error) res.erros.push('Órgãos da ARP ' + ata.numero + ': ' + error.message); }
+                res.orgaos_pncp += [...linhas.values()].filter((l) => l.tipo === 'Não Participante').length;
+              }
+            }
+
+            // ---- 4. termos aditivos (prorrogação e reequilíbrio)
+            const arquivos = (await talvez(`${base}/atas/${pt.ata}/arquivos`)) || [];
+            const ps = (periodos || []).filter((p: any) => p.ata_id === ata.id).sort((x: any, y: any) => x.numero - y.numero);
+            const fimSistema = ps.length ? ps[ps.length - 1].fim : ata.vigencia_fim;
+            let prorrogacaoPelaVigencia = a.vigenciaFim && fimSistema && a.vigenciaFim > fimSistema;
+            for (const arq of arquivos) {
+              const url = arq.url; const titulo = arq.titulo || '';
+              if (lidos.has(url)) continue;
+              if (!/aditiv|apostil|reequil|prorrog|renova/i.test(titulo)) { await sb.from('pncp_documentos').upsert(comCid({ url, titulo, ata_id: ata.id, resultado: 'sem interesse' })); continue; }
+              let texto = '';
+              try {
+                const bin = new Uint8Array(await (await fetch(url)).arrayBuffer());
+                const pdf = await getDocumentProxy(bin);
+                texto = (await extractText(pdf, { mergePages: true })).text as string;
+              } catch (e) { res.erros.push('PDF ' + titulo + ': ' + (e as Error).message); continue; }
+              res.documentos_lidos++;
+              const an = analisarAditivo(texto);
+              const achados: string[] = [];
+              if (an.prorrogacao) {
+                const inicio = an.inicio || (fimSistema ? somaDias(fimSistema, 1) : null);
+                const fim = an.fim || a.vigenciaFim;
+                const jaTem = ps.some((p: any) => p.fim === fim);
+                if (!jaTem && fim && (!fimSistema || fim > fimSistema)) {
+                  await propor({ chave: 'prorr:' + url, tipo: 'prorrogacao', ata_id: ata.id, ata_numero: ata.numero, numero_controle: controle,
+                    resumo: `ARP ${ata.numero} prorrogada até ${fim.split('-').reverse().join('/')}` + (an.renova ? ', com renovação dos quantitativos' : an.renova === false ? ', sem renovação dos quantitativos' : ' (renovação dos quantitativos não identificada: confira)') + '.',
+                    dados: { inicio, fim, renova: !!an.renova, renova_lido: an.renova, instrumento: an.instrumento || titulo, trecho: an.trecho },
+                    documento_titulo: titulo, documento_url: url });
+                  res.prorrogacoes++; prorrogacaoPelaVigencia = false; achados.push('prorrogação');
+                } else if (jaTem) { prorrogacaoPelaVigencia = false; achados.push('prorrogação já cadastrada'); }
+              }
+              if (an.precos.length) {
+                const mudam = an.precos.filter((p) => { const it = (itens || []).find((i: any) => i.ata_id === ata.id && i.numero === p.numero); return !it || Math.abs(Number(it.preco_unitario) - p.preco_novo) > 0.004; });
+                if (mudam.length) {
+                  await propor({ chave: 'reeq:' + url, tipo: 'reequilibrio', ata_id: ata.id, ata_numero: ata.numero, numero_controle: controle,
+                    resumo: `ARP ${ata.numero}: novo preço em ${mudam.length} item(ns) (${an.instrumento || 'termo aditivo'}).`,
+                    dados: { itens: mudam, instrumento: an.instrumento || titulo }, documento_titulo: titulo, documento_url: url });
+                  res.reequilibrios++; achados.push('reequilíbrio');
+                } else achados.push('preços já atualizados');
+              }
+              await sb.from('pncp_documentos').upsert(comCid({ url, titulo, ata_id: ata.id, resultado: achados.join(', ') || 'nada identificado' }));
+            }
+            // Vigência estendida no PNCP sem aditivo legível: propõe a prorrogação para conferir
+            if (prorrogacaoPelaVigencia) {
+              await propor({ chave: 'vig:' + controle + ':' + a.vigenciaFim, tipo: 'prorrogacao', ata_id: ata.id, ata_numero: ata.numero, numero_controle: controle,
+                resumo: `ARP ${ata.numero}: o PNCP mostra vigência até ${a.vigenciaFim.split('-').reverse().join('/')}, mas o termo aditivo não foi lido. Confira se renovou os quantitativos.`,
+                dados: { inicio: fimSistema ? somaDias(fimSistema, 1) : a.vigenciaInicio, fim: a.vigenciaFim, renova: false, renova_lido: null } });
+              res.prorrogacoes++;
+            }
+          } catch (e) { res.erros.push(controle + ': ' + (e as Error).message); }
+        }
+
+        await sb.from('pncp_config').update({ ultima_execucao: new Date().toISOString(), ultimo_resultado: { ...res, origem } }).eq('id', cfg.id);
+        resultados.push(res);
+      } catch (e) {
+        await sb.from('pncp_config').update({ ultima_execucao: new Date().toISOString(), ultimo_resultado: { erro: (e as Error).message } }).eq('id', cfg.id);
+        resultados.push({ erro: (e as Error).message });
+      }
+    }
+    if (resultados.length === 1 && resultados[0].erro) return resposta({ erro: resultados[0].erro }, 500);
+    return resposta({ ok: true, ...(resultados.length === 1 ? resultados[0] : { consorcios: resultados.length }) });
   } catch (e) {
-    await sb.from('pncp_config').update({ ultima_execucao: new Date().toISOString(), ultimo_resultado: { erro: (e as Error).message } }).eq('id', 1);
     return resposta({ erro: (e as Error).message }, 500);
   }
 });

@@ -281,6 +281,8 @@
       logo: c.logo_url ? D.urlCadastro(c.logo_url) : i.logo_url || null };
   }
   const sigla = () => ident().sigla || 'consórcio';
+  // Link público com a sigla do consórcio (?c=SIGLA): o formulário abre já no consórcio certo
+  const linkPublico = (rota) => location.origin + location.pathname + (ident().sigla ? '?c=' + encodeURIComponent(ident().sigla) : '') + '#' + rota;
   // Mostra nome e logotipo do consórcio nas faixas da tela principal e das telas públicas
   function aplicarIdentidade() {
     const i = ident();
@@ -291,7 +293,7 @@
   }
   async function carregarIdentidade() {
     if (estado.ident) return;
-    try { estado.ident = (D.identidade && await D.identidade()) || {}; } catch (e) { estado.ident = {}; }
+    try { const u = estado.usuario; estado.ident = (D.identidade && await D.identidade(u && u.consorcio && u.consorcio.sigla)) || {}; } catch (e) { estado.ident = {}; }
     aplicarIdentidade();
   }
 
@@ -333,6 +335,35 @@
   $('btn-topo-novo').addEventListener('click', () => { location.hash = '#novo'; });
   $('btn-menu').addEventListener('click', () => { const a = $('lateral').classList.toggle('aberta'); $('btn-menu').setAttribute('aria-expanded', a ? 'true' : 'false'); });
   $('topo-usuario').addEventListener('click', minhaConta);
+  $('btn-trocar-consorcio').addEventListener('click', () => escolherConsorcio(false));
+  $('btn-trocar-consorcio-modulos').addEventListener('click', () => escolherConsorcio(false));
+
+  // ---------------------------------------------------------------- vários consórcios
+  // Quem está em mais de um consórcio escolhe em qual trabalhar; os dados de um nunca aparecem no outro.
+  function mostrarTrocar() {
+    const u = estado.usuario || {};
+    const varios = (u.consorcios || []).length > 1;
+    $('btn-trocar-consorcio').hidden = !varios; $('btn-trocar-consorcio-modulos').hidden = !varios;
+  }
+  function escolherConsorcio(obrigatorio) {
+    const u = estado.usuario;
+    const lista = (u.consorcios || []);
+    const d = abrirDialogo(obrigatorio ? 'Em qual consórcio você vai trabalhar?' : 'Trocar consórcio', el('div', null,
+      el('p', { class: 'ajuda' }, 'Cada consórcio tem seus próprios dados, módulos e perfil. Você pode trocar a qualquer momento pelo botão "Trocar consórcio", no topo.'),
+      el('ul', { class: 'lista-consorcios' }, lista.map((c) => el('li', null, el('button', { type: 'button', class: 'btn-consorcio' + (c.atual ? ' atual' : ''), onclick: async (ev) => {
+        if (c.atual && !obrigatorio) { d.close(); return; }
+        ocupado(ev.currentTarget, 'Abrindo…');
+        try {
+          await D.trocarConsorcio(c.id);
+          Object.assign(estado, { base: null, cad: null, irp: null, ident: null, modulo: null });
+          d.close(); history.replaceState(null, '', '#modulos');
+          estado.usuario = await D.sessao(); await entrarNoSistema(true);
+          toast('Agora em: ' + c.sigla + '.');
+        } catch (e) { toast(e.message, true); ocupado(ev.currentTarget); }
+      } }, el('strong', null, c.sigla), el('span', null, c.nome), el('span', { class: 'etiqueta' }, NOME_PERFIL[c.perfil] || c.perfil), c.atual ? el('span', { class: 'etiqueta etiqueta-ativo' }, 'Atual') : null))))),
+      obrigatorio ? [] : [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Fechar')]);
+    if (obrigatorio) d.addEventListener('cancel', (e) => e.preventDefault());
+  }
 
   function minhaConta() {
     const u = estado.usuario;
@@ -363,7 +394,7 @@
       ['Site', [['site', 'Integração com o site']]],
     ],
     sistema: [
-      ['Sistema', [['usuarios', 'Usuários e acessos']]],
+      ['Sistema', [['usuarios', 'Usuários e acessos'], ['consorcios', 'Consórcios (Suporte SOFT+)', () => !!(estado.usuario && estado.usuario.suporte)]]],
     ],
   };
   function montarMenu(mod) {
@@ -462,8 +493,12 @@
   async function entrarNoSistema(paraModulos) {
     mostrarTela('tela-carregando'); $('carregando-texto').textContent = 'Abrindo o sistema…';
     if (estado.usuario.troca_senha && D.modo !== 'demo') { mostrarTela('tela-login'); $('form-login').hidden = true; $('form-nova-senha').hidden = false; return; }
+    // Mais de um consórcio e nenhum escolhido: pergunta antes de abrir
+    if ((estado.usuario.consorcios || []).length > 1 && !estado.usuario.consorcio) { mostrarTela('tela-modulos'); escolherConsorcio(true); return; }
+    if ((estado.usuario.consorcios || []).length === 1 && !estado.usuario.consorcio) { await D.trocarConsorcio(estado.usuario.consorcios[0].id); estado.usuario = await D.sessao(); }
     estado.acessos = await D.acessos(estado.usuario);
-    await carregarIdentidade();
+    estado.ident = null; await carregarIdentidade();
+    mostrarTrocar();
     estado.modulo = null; estado.logado = true;
     $('topo-usuario').textContent = estado.usuario.nome;
     $('topo-usuario-modulos').textContent = estado.usuario.nome;
@@ -1740,7 +1775,7 @@
   // ================================================================= SOLICITAÇÕES (formulário online)
   const SIT_SOL = { recebida: ['Recebida', 'etiqueta-pendente'], em_analise: ['Em análise', 'etiqueta-azul'], atendida: ['Atendida', 'etiqueta-ativo'], recusada: ['Recusada', 'etiqueta-desativado'] };
   const etiquetaSol = (x) => el('span', { class: 'etiqueta ' + SIT_SOL[x][1] }, SIT_SOL[x][0]);
-  const linkFormulario = () => location.href.split('#')[0] + '#solicitar';
+  const linkFormulario = () => linkPublico('solicitar');
 
   TELAS.solicitacoes = (c) => {
     const b = estado.base;
@@ -2198,7 +2233,7 @@
       el('div', { class: 'legenda-perfis' },
         el('strong', null, 'Perfis em cada módulo: '),
         Object.keys(NOME_PERFIL).map((k) => el('span', null, el('b', null, NOME_PERFIL[k]), ' — ' + M.AJUDA_PERFIL[k] + '. ')),
-        el('span', null, el('b', null, 'Administrador do sistema'), ' — todos os módulos e os usuários.')),
+        el('span', null, el('b', null, 'Administrador do consórcio'), ' — todos os módulos e os usuários deste consórcio.')),
       tabela(['Nome', 'E-mail', 'Módulos liberados', 'Situação', ''], lista.map((u) => el('tr', null, el('td', null, el('strong', null, u.nome)), el('td', null, u.email),
         el('td', null, chipsAcesso(u, acessos)),
         el('td', null, el('span', { class: 'etiqueta ' + (u.ativo ? 'etiqueta-ativo' : 'etiqueta-desativado') }, u.ativo ? 'Ativo' : 'Desativado')),
@@ -2222,15 +2257,15 @@
         el('div', { class: 'linha-acesso-texto' }, el('label', { for: 'fu-mod-' + m.id }, m.nome), el('span', { class: 'ajuda', id: 'fu-mod-' + m.id + '-desc' }, m.descricao)), s) };
     });
     const caixaModulos = el('fieldset', { class: 'caixa-acessos' }, el('legend', null, 'Módulos que a pessoa vê'), seletores.map((x) => x.linha),
-      el('p', { class: 'ajuda aviso-admin', hidden: true }, 'Administrador do sistema vê todos os módulos como administrador. Os acessos abaixo ficam guardados caso ele deixe de ser administrador.'));
+      el('p', { class: 'ajuda aviso-admin', hidden: true }, 'Administrador do consórcio vê todos os módulos como administrador. Os acessos abaixo ficam guardados caso ele deixe de ser administrador.'));
     const sincronizar = () => { caixaModulos.classList.toggle('desligada', f.admin.checked); caixaModulos.querySelector('.aviso-admin').hidden = !f.admin.checked; };
     f.admin.addEventListener('change', sincronizar); sincronizar();
     const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar');
     const d = abrirDialogo(novo ? 'Novo usuário' : 'Editar usuário', el('div', null,
-      campo('fu-nome', 'Nome', f.nome, null, true), campo('fu-email', 'E-mail', f.email, u.id ? 'O e-mail não muda por aqui.' : null, true),
-      novo ? campo('fu-senha', 'Senha inicial', f.senha, 'A pessoa troca no primeiro acesso.', true) : null,
+      campo('fu-nome', 'Nome', f.nome, null, true), campo('fu-email', 'E-mail', f.email, u.id ? 'O e-mail não muda por aqui.' : 'Se a pessoa já usa o sistema em outro consórcio, ela entra neste com o mesmo login.', true),
+      novo ? campo('fu-senha', 'Senha inicial', f.senha, 'A pessoa troca no primeiro acesso. Quem já tem login continua com a senha dele.', true) : null,
       acessos
-        ? [el('label', { class: 'checkbox caixa-admin' }, f.admin, el('span', null, el('strong', null, 'Administrador do sistema'), el('br'), el('span', { class: 'ajuda' }, 'Vê todos os módulos e cria usuários e acessos.'))), caixaModulos]
+        ? [el('label', { class: 'checkbox caixa-admin' }, f.admin, el('span', null, el('strong', null, 'Administrador do consórcio'), el('br'), el('span', { class: 'ajuda' }, 'Vê todos os módulos e cria usuários e acessos neste consórcio.'))), caixaModulos]
         : [campo('fu-perfil', 'Perfil (Controle de Adesões)', f.perfil, 'Rode o script 10 na Supabase para liberar o acesso por módulo.')],
       u.id ? el('label', { class: 'checkbox' }, f.ativo, ' Acesso ativo (quem já entrou é desativado, nunca apagado)') : null),
       [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), btn]);
@@ -2249,6 +2284,48 @@
         else { const r = await D.criarUsuario({ nome: f.nome.value.trim(), email: f.email.value.trim().toLowerCase(), senha: f.senha.value, perfil }); id = r && r.id; }
         if (acessos && id) await D.salvarAcessos(id, lista);
         d.close(); toast('Usuário salvo.'); rotear();
+      } catch (e) { toast(e.message, true); ocupado(btn); }
+    });
+  }
+
+  // ================================================================= CONSÓRCIOS (só Suporte SOFT+)
+  TELAS.consorcios = async (c) => {
+    if (!(estado.usuario && estado.usuario.suporte)) { rc(c, cabecalho('Acesso não permitido', 'Só o Suporte SOFT+ cadastra consórcios.')); return; }
+    const btnNovo = el('button', { type: 'button', class: 'btn btn-primario', onclick: () => novoConsorcio() }, '+ Novo consórcio');
+    rc(c, cabecalho('Consórcios', 'Carregando…', btnNovo));
+    let lista;
+    try { lista = await D.consorciosTodos(); } catch (e) { rc(c, cabecalho('Consórcios', '', btnNovo), el('p', { class: 'msg msg-falta' }, /consorcios|does not exist|Could not find/i.test(e.message) ? 'Rode o script 15 na Supabase para cadastrar vários consórcios.' : e.message)); return; }
+    const atual = (estado.usuario.consorcio || {}).id;
+    rc(c, cabecalho('Consórcios', lista.length + ' consórcio(s) no sistema. Cada um tem seus dados, usuários, módulos e site; um nunca vê os dados do outro.', btnNovo),
+      el('p', { class: 'ajuda' }, 'Depois de criar, troque para o consórcio novo (botão "Trocar consórcio", no topo) e preencha Consórcio › Dados do consórcio, Brasão e timbre e Normas; em Usuários e acessos, cadastre o administrador do consórcio. Links públicos: ', el('code', null, '?c=SIGLA'), '.'),
+      tabela(['Sigla', 'Nome', 'Link público', 'Situação', ''], lista.map((x) => {
+        const link = location.origin + location.pathname + '?c=' + encodeURIComponent(x.sigla) + '#solicitar';
+        return el('tr', null, el('td', null, el('strong', null, x.sigla), x.id === atual ? el('span', { class: 'etiqueta etiqueta-ativo ml-1' }, 'Atual') : null), el('td', null, x.nome),
+          el('td', null, el('button', { type: 'button', class: 'link', onclick: async () => { try { await navigator.clipboard.writeText(link); toast('Link do formulário de adesão copiado.'); } catch (e) { toast(link); } } }, 'Copiar link do formulário')),
+          el('td', null, el('span', { class: 'etiqueta ' + (x.ativo ? 'etiqueta-ativo' : 'etiqueta-desativado') }, x.ativo ? 'Ativo' : 'Desativado')),
+          el('td', { class: 'acoes' }, x.id === atual ? null : el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: async () => {
+            if (!(await confirmar(x.ativo ? 'Desativar consórcio' : 'Reativar consórcio', x.ativo ? 'Desativar ' + x.sigla + '? Ninguém entra nele e os links públicos param. Nada é apagado.' : 'Reativar ' + x.sigla + '?', x.ativo ? 'Desativar' : 'Reativar', x.ativo))) return;
+            try { await D.alterarConsorcio(x.id, !x.ativo); estado.usuario = await D.sessao(); mostrarTrocar(); rotear(); } catch (e) { toast(e.message, true); }
+          } }, x.ativo ? 'Desativar' : 'Reativar')));
+      })));
+  };
+  function novoConsorcio() {
+    const f = { sigla: txt('', { maxlength: 20, placeholder: 'CIMOP' }), nome: txt('', { maxlength: 200 }), cnpj: txt('', { inputmode: 'numeric', maxlength: 18 }), cidade: txt('', { maxlength: 80, placeholder: 'Cidade/UF' }) };
+    f.cnpj.addEventListener('input', () => { const n = f.cnpj.value.replace(/\D/g, '').slice(0, 14); f.cnpj.value = n.length === 14 ? O.formatarCnpj(n) : n; });
+    const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Criar consórcio');
+    const d = abrirDialogo('Novo consórcio', el('div', null,
+      el('div', { class: 'grade-campos' }, campo('nc-sigla', 'Sigla', f.sigla, 'Só letras e números. Vai nos links públicos (?c=SIGLA) e no número dos ofícios.', true), campo('nc-cnpj', 'CNPJ', f.cnpj, 'Usado na busca das atas no PNCP.')),
+      campo('nc-nome', 'Nome do consórcio', f.nome, null, true), campo('nc-cidade', 'Sede (cidade/UF)', f.cidade)),
+      [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), btn]);
+    btn.addEventListener('click', async () => {
+      if (!marcarErro(f.sigla, /^[A-Za-z0-9]{2,20}$/.test(f.sigla.value.trim()) ? '' : 'Use de 2 a 20 letras ou números, sem espaços.')) return;
+      if (!marcarErro(f.nome, f.nome.value.trim() ? '' : 'Informe o nome.')) return;
+      if (!marcarErro(f.cnpj, !f.cnpj.value || f.cnpj.value.replace(/\D/g, '').length === 14 ? '' : 'CNPJ com 14 números.')) return;
+      ocupado(btn, 'Criando…');
+      try {
+        await D.criarConsorcio({ sigla: f.sigla.value.trim().toUpperCase(), nome: f.nome.value.trim(), cnpj: f.cnpj.value.replace(/\D/g, '') || null, cidade_uf: f.cidade.value.trim() || null });
+        d.close(); estado.usuario = await D.sessao(); mostrarTrocar();
+        toast('Consórcio ' + f.sigla.value.trim().toUpperCase() + ' criado. Use "Trocar consórcio" para configurá-lo.'); rotear();
       } catch (e) { toast(e.message, true); ocupado(btn); }
     });
   }

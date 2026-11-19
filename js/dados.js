@@ -381,21 +381,44 @@
       for (;;) { const d = ok(await sb.from(tabela).select('*').order(ordem || 'id').range(de, de + 999)); out = out.concat(d); if (d.length < 1000) break; de += 1000; }
       return out;
     }
+    // Sigla do consórcio no link público (?c=SIGLA). Sem sigla, o banco usa o primeiro consórcio (links antigos).
+    const SIGLA_LINK = new URLSearchParams(location.search).get('c') || null;
+    // Chama a função nova (com sigla/IRP) e, se o banco ainda não tiver o script 15, a antiga.
+    async function rpcCompat(nome, args, extras) {
+      const r = await sb.rpc(nome, Object.assign({}, args, extras));
+      if (r.error && /function|could not find|PGRST202/i.test(r.error.message + ' ' + (r.error.code || ''))) return ok(await sb.rpc(nome, args));
+      return ok(r);
+    }
     const api = {
-      modo: 'supabase', sb,
+      modo: 'supabase', sb, siglaLink: SIGLA_LINK,
+      consorcioId: null, configId: 1,
       async sessao() {
         const { data } = await sb.auth.getSession(); if (!data.session) return null;
         const u = ok(await sb.from('usuarios').select('*').eq('id', data.session.user.id).maybeSingle());
         if (!u || !u.ativo) { await sb.auth.signOut(); throw new Error('Seu acesso não está ativo. Fale com o administrador.'); }
+        // Vários consórcios (script 15): perfil no consórcio atual e a lista para trocar
+        const mc = await sb.rpc('meus_consorcios');
+        if (!mc.error) {
+          u.consorcios = mc.data || [];
+          const atual = u.consorcios.find((c) => c.atual) || null;
+          u.consorcio = atual;
+          api.consorcioId = atual ? atual.id : null;
+          if (atual) u.perfil = atual.perfil || u.perfil;
+          else if (!u.consorcios.length && !u.suporte) { await sb.auth.signOut(); throw new Error('Seu acesso não está ativo em nenhum consórcio. Fale com o administrador.'); }
+        } else u.consorcios = [];
         return u;
       },
+      async trocarConsorcio(id) { ok(await sb.rpc('trocar_consorcio', { p_consorcio: id })); },
+      async consorciosTodos() { return ok(await sb.from('consorcios').select('*').order('sigla')); },
+      async criarConsorcio(p) { return ok(await sb.rpc('criar_consorcio', { p_sigla: p.sigla, p_nome: p.nome, p_cnpj: p.cnpj || null, p_cidade_uf: p.cidade_uf || null })); },
+      async alterarConsorcio(id, ativo) { ok(await sb.rpc('alterar_consorcio', { p_id: id, p_ativo: ativo })); },
       async entrar(email, senha) { ok(await sb.auth.signInWithPassword({ email, password: senha })); return api.sessao(); },
       async sair() { await sb.auth.signOut(); },
       async esqueci(email) { ok(await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })); },
       async trocarSenha(nova) { ok(await sb.auth.updateUser({ password: nova })); const { data } = await sb.auth.getUser(); await sb.from('usuarios').update({ troca_senha: false }).eq('id', data.user.id); },
       async carregar() {
         const [config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes, periodos, pncp, partes, precos] = await Promise.all([
-          sb.from('configuracoes').select('*').eq('id', 1).single().then(ok), tudo('atas'), tudo('itens'), tudo('orgaos'), tudo('pedidos'), tudo('pedido_itens'),
+          sb.from('configuracoes').select('*').limit(1).single().then(ok).then((c) => { api.configId = c.id; return c; }), tudo('atas'), tudo('itens'), tudo('orgaos'), tudo('pedidos'), tudo('pedido_itens'),
           tudo('solicitacoes', 'criado_em').catch(() => []),   // sem o script 02: lista vazia
           tudo('periodos').catch(() => []),                      // sem o script 03: sem períodos
           tudo('pncp_atualizacoes', 'criado_em').catch(() => null),  // sem o script 04: null
@@ -416,7 +439,7 @@
         const r = await sb.from('orgao_gestores').select('id').limit(1);
         if (r.error) { const e = new Error('Rode o script 11 na Supabase para ativar o Cadastro de Consorciados.'); e.semScript = true; throw e; }
         const [orgaos, leis, gestores, contatos, pessoas, config, integ, erros] = await Promise.all([tudo('orgaos'), tudo('orgao_leis'), tudo('orgao_gestores'), tudo('orgao_contatos'), tudo('pessoas'),
-          sb.from('configuracoes').select('*').eq('id', 1).single().then(ok),
+          sb.from('configuracoes').select('*').limit(1).single().then(ok).then((c) => { api.configId = c.id; return c; }),
           sb.from('integracao').select('*').then((r) => (r.error ? [] : r.data)), sb.from('integracao_erros').select('*').then((r) => (r.error ? [] : r.data))]);
         // Módulo Consórcio (script 14): sem o script, as listas ficam vazias
         const [normas, documentos] = await Promise.all([sb.from('normas').select('*').order('data', { ascending: false }).then((r) => (r.error ? null : r.data)),
@@ -424,7 +447,7 @@
         return { orgaos, leis, gestores, contatos, pessoas, config, integracao: integ, errosSite: erros, normas: normas || [], documentos: documentos || [], semScript14: normas === null };
       },
       async excluir(tabela, id) { ok(await sb.from(tabela).delete().eq('id', id)); },
-      async identidade() { const r = await sb.rpc('publico_identidade'); return r.error ? null : r.data; },
+      async identidade(sigla) { try { return await rpcCompat('publico_identidade', {}, { p_sigla: sigla || SIGLA_LINK }); } catch (e) { return null; } },
       async siteOrgaos() { return ok(await sb.rpc('site_orgaos')); },
       async siteDefinirPortal(id) { ok(await sb.rpc('site_definir_portal', { p_orgao: id || null })); },
       // ---------- Integração com o site (script 12)
@@ -475,9 +498,9 @@
         const caminho = 'envios/' + irp + '/' + uid() + '/' + arquivo.name.normalize('NFD').replace(/[^\w.\-]+/g, '_');
         const { error } = await sb.storage.from('consorcio-irp').upload(caminho, arquivo, { contentType: 'application/pdf', upsert: false });
         if (error) throw new Error('Não foi possível enviar o arquivo: ' + error.message);
-        return ok(await sb.rpc('publico_irp_anexar', { p_protocolo: protocolo, p_cnpj: cnpj, p_caminho: caminho, p_nome: arquivo.name }));
+        return rpcCompat('publico_irp_anexar', { p_protocolo: protocolo, p_cnpj: cnpj, p_caminho: caminho, p_nome: arquivo.name }, { p_irp: irp });
       },
-      async publicoIrpConsultar(protocolo, cnpj) { return ok(await sb.rpc('publico_irp_consultar', { p_protocolo: protocolo, p_cnpj: cnpj })); },
+      async publicoIrpConsultar(protocolo, cnpj, irp) { return rpcCompat('publico_irp_consultar', { p_protocolo: protocolo, p_cnpj: cnpj }, irp ? { p_irp: irp } : {}); },
       async enviarArquivoCadastro(arquivo, pasta) {
         const ext = (arquivo.name.match(/\.(\w+)$/) || [, 'pdf'])[1].toLowerCase();
         const caminho = pasta + '/' + Date.now() + '-' + uid().slice(0, 8) + '.' + ext;
@@ -487,7 +510,7 @@
       },
       async apagarArquivoCadastro(caminho) { if (caminho && !/^(https?|blob|data):/.test(caminho)) await sb.storage.from('consorcio-cadastro').remove([caminho]); },
       urlCadastro(caminho) { if (!caminho) return null; if (/^(https?|blob|data):/.test(caminho)) return caminho; return sb.storage.from('consorcio-cadastro').getPublicUrl(caminho).data.publicUrl; },
-      async salvarConfig(c) { const { id, atualizado_em, ...r } = Object.fromEntries(Object.entries(c).filter(([k]) => !k.startsWith('_'))); ok(await sb.from('configuracoes').update({ ...r, atualizado_em: new Date().toISOString() }).eq('id', 1)); },
+      async salvarConfig(c) { const { id, atualizado_em, ...r } = Object.fromEntries(Object.entries(c).filter(([k]) => !k.startsWith('_'))); ok(await sb.from('configuracoes').update({ ...r, atualizado_em: new Date().toISOString() }).eq('id', api.configId)); },
       async registrarPedido(p) { return ok(await sb.rpc('registrar_pedido', { p })); },
       async cancelarPedido(id, motivo) { ok(await sb.rpc('cancelar_pedido', { p_id: id, p_motivo: motivo })); },
       async substituirPedido(id, p) { return ok(await sb.rpc('substituir_pedido', { p_id: id, p })); },
@@ -529,14 +552,14 @@
         }
         return resumo;
       },
-      async publicoAtas() { return ok(await sb.rpc('publico_atas')) || []; },
+      async publicoAtas() { return (await rpcCompat('publico_atas', {}, { p_sigla: SIGLA_LINK })) || []; },
       async importacaoExistente(hash) { return ok(await sb.from('importacoes').select('*').eq('hash', hash).maybeSingle()); },
       async registrarImportacao(r) {
         const { data } = await sb.auth.getUser();
         const u = data && data.user ? ok(await sb.from('usuarios').select('nome').eq('id', data.user.id).maybeSingle()) : null;
         ok(await sb.from('importacoes').insert({ ...r, criado_por_nome: u ? u.nome : null }));
       },
-      async publicoOrgao(cnpj) { return ok(await sb.rpc('publico_orgao', { p_cnpj: cnpj })); },
+      async publicoOrgao(cnpj) { return rpcCompat('publico_orgao', { p_cnpj: cnpj }, { p_sigla: SIGLA_LINK }); },
       async enviarSolicitacao(p, arquivos) {
         const pasta = 'envios/' + uid() + '/';
         const lista = [];
@@ -546,9 +569,9 @@
           if (error) throw new Error('Não foi possível enviar o arquivo ' + a.arquivo.name + ': ' + error.message);
           lista.push({ tipo: a.tipo, nome: a.arquivo.name, caminho: pasta + nome, tamanho: a.arquivo.size });
         }
-        return ok(await sb.rpc('enviar_solicitacao', { p: { ...p, arquivos: lista } }));
+        return ok(await sb.rpc('enviar_solicitacao', { p: { ...p, arquivos: lista, sigla: SIGLA_LINK } }));
       },
-      async consultarSolicitacao(protocolo, cnpj) { return ok(await sb.rpc('consultar_solicitacao', { p_protocolo: protocolo, p_cnpj: cnpj })); },
+      async consultarSolicitacao(protocolo, cnpj) { return rpcCompat('consultar_solicitacao', { p_protocolo: protocolo, p_cnpj: cnpj }, { p_sigla: SIGLA_LINK }); },
       async atualizarSolicitacao(id, campos) { ok(await sb.from('solicitacoes').update({ ...campos, atualizado_em: new Date().toISOString() }).eq('id', id)); },
       async urlArquivo(caminho) { const { data } = await sb.storage.from('consorcio-solicitacoes').createSignedUrl(caminho, 600); return data && data.signedUrl; },
       async registrarReequilibrio(itemId, preco, desde, instrumento, obs) { ok(await sb.rpc('registrar_reequilibrio', { p_item: itemId, p_preco: preco, p_desde: desde, p_instrumento: instrumento || null, p_obs: obs || null })); },
@@ -562,7 +585,7 @@
         if (error) { let m = error.message; try { const j = await error.context.json(); if (j && j.erro) m = j.erro; } catch (e) {} throw new Error(m); }
         return data;
       },
-      async pncpConfig() { return ok(await sb.from('pncp_config').select('cnpj, desde, ultima_execucao, ultimo_resultado').eq('id', 1).maybeSingle()) || {}; },
+      async pncpConfig() { return ok(await sb.from('pncp_config').select('cnpj, desde, ultima_execucao, ultimo_resultado').limit(1).maybeSingle()) || {}; },
       async buscarPncp() {
         const { data, error } = await sb.functions.invoke('consorcio-pncp', { body: { origem: 'manual' } });
         if (data && data.erro) throw new Error(data.erro);
@@ -571,19 +594,30 @@
       },
       async confirmarAtualizacao(id, dados) { ok(await sb.rpc('confirmar_atualizacao', { p_id: id, p_dados: dados || null })); },
       async ignorarAtualizacao(id) { ok(await sb.rpc('ignorar_atualizacao', { p_id: id })); },
-      async usuarios() { return ok(await sb.from('usuarios').select('*').order('nome')); },
+      // Usuários do consórcio atual, com o perfil e a situação neste consórcio (script 15). Sem o script: a tabela antiga.
+      async usuarios() {
+        const r = await sb.from('usuario_consorcios').select('perfil, ativo, usuario_id, usuarios(id, nome, email, troca_senha, suporte)').eq('consorcio_id', api.consorcioId);
+        if (r.error || !api.consorcioId) return ok(await sb.from('usuarios').select('*').order('nome'));
+        return r.data.filter((x) => x.usuarios).map((x) => ({ ...x.usuarios, perfil: x.perfil, ativo: x.ativo })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+      },
       async criarUsuario(u) {
         const { data, error } = await sb.functions.invoke('consorcio-convidar-usuario', { body: u });
         if (error) throw new Error((data && data.erro) || error.message);
         if (data && data.erro) throw new Error(data.erro);
         return data;
       },
-      async salvarUsuario(u) { ok(await sb.from('usuarios').update({ nome: u.nome, perfil: u.perfil, ativo: u.ativo }).eq('id', u.id)); },
+      async salvarUsuario(u) {
+        if (!api.consorcioId) { ok(await sb.from('usuarios').update({ nome: u.nome, perfil: u.perfil, ativo: u.ativo }).eq('id', u.id)); return; }
+        ok(await sb.from('usuarios').update({ nome: u.nome }).eq('id', u.id));
+        ok(await sb.from('usuario_consorcios').update({ perfil: u.perfil, ativo: u.ativo }).eq('usuario_id', u.id).eq('consorcio_id', api.consorcioId));
+      },
       // Módulos liberados para a pessoa: { adesoes: 'operador', sistema: 'administrador' }.
       // Sem o script 10: administrador vê tudo; os demais usam o perfil antigo no módulo de adesões.
       async acessos(u) {
         const admin = u.perfil === 'administrador', mapa = {};
-        const r = await sb.from('usuario_modulos').select('modulo_id, perfil').eq('usuario_id', u.id);
+        let q = sb.from('usuario_modulos').select('modulo_id, perfil').eq('usuario_id', u.id);
+        if (api.consorcioId) q = q.eq('consorcio_id', api.consorcioId);
+        const r = await q;
         if (r.error) {   // script 10 ainda não rodado
           if (admin) for (const m of window.MODULOS.lista) mapa[m.id] = 'administrador'; else mapa.adesoes = u.perfil;
           return mapa;

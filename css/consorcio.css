@@ -7,3 +7,12 @@
 .linha-escolha { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
 .linha-escolha .campo { flex: 1 1 360px; margin-bottom: 0; }
 .linha-escolha .btn { margin-bottom: 4px; }
+/* Escolher/trocar consórcio */
+.lista-consorcios { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 10px; }
+.btn-consorcio { width: 100%; display: grid; grid-template-columns: auto 1fr auto auto; gap: 4px 12px; align-items: center; text-align: left; padding: 14px 16px;
+  border: 1px solid var(--line); border-radius: 14px; background: #fff; cursor: pointer; font: inherit; color: var(--text); }
+.btn-consorcio strong { font-size: 1.05rem; color: var(--brand, #0d4fc4); }
+.btn-consorcio span:not(.etiqueta) { color: var(--text-dim); font-size: .92rem; }
+.btn-consorcio:hover, .btn-consorcio:focus-visible { border-color: var(--brand, #0d4fc4); box-shadow: 0 6px 18px rgba(12,38,64,.08); }
+.btn-consorcio.atual { border-color: #0a9668; background: #f2fbf7; }
+@media (max-width: 600px) { .btn-consorcio { grid-template-columns: 1fr auto; } .btn-consorcio span:not(.etiqueta) { grid-column: 1 / -1; } }
