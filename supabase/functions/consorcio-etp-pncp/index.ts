@@ -17,14 +17,21 @@ const resposta = (corpo: unknown, status = 200) => new Response(JSON.stringify(c
 const API = 'https://pncp.gov.br/api';
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const LIMITE_FALHAS = 25;          // números seguidos sem compra para dar o ano por lido
-const PARALELO = 4;                // leituras ao mesmo tempo (educado com o PNCP)
+const PARALELO = 2;                // leituras ao mesmo tempo (o PNCP limita consultas seguidas: HTTP 429)
+const INTERVALO = 300;             // pausa mínima entre consultas (ms)
 let PRAZO = 0;                     // hora-limite desta execução (ms)
-const temTempo = (folga = 0) => Date.now() + folga < PRAZO;
+let FREIO = false;                 // o PNCP pediu para parar (429 repetido): encerra esta execução
+const temTempo = (folga = 0) => !FREIO && Date.now() + folga < PRAZO;
+let ultimaConsulta = 0;
+async function vez() { const agora = Date.now(); const t = Math.max(0, ultimaConsulta + INTERVALO - agora); ultimaConsulta = agora + t; if (t) await espera(t); }
 
 // Busca com novas tentativas. Devolve null para 204/404.
 async function pegar(url: string, tentativas = 3, limiteMs = 25000): Promise<any> {
   let ultimo = '';
-  for (let i = 0; i < tentativas; i++) {
+  let limitados = 0;
+  for (let i = 0; i < tentativas + limitados && i < 6; i++) {
+    if (FREIO) break;
+    await vez();
     const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), limiteMs);
     try {
       const r = await fetch(url, { signal: ctl.signal, headers: { accept: 'application/json', 'user-agent': 'SOFT+ Consorcios (gestao-consorcio; etp)' } });
@@ -32,12 +39,19 @@ async function pegar(url: string, tentativas = 3, limiteMs = 25000): Promise<any
       if (r.ok) { const txt = await r.text(); return txt ? JSON.parse(txt) : null; }
       ultimo = 'HTTP ' + r.status;
       if (r.status === 400) return null;
+      if (r.status === 429) {
+        limitados++;
+        if (limitados >= 3) { FREIO = true; break; }
+        const ra = Number(r.headers.get('retry-after')) || 0;
+        await espera(Math.min(30000, Math.max(ra * 1000, 8000 * limitados)));
+        continue;
+      }
     } catch (e) { ultimo = (e as Error).name === 'AbortError' ? 'tempo esgotado' : (e as Error).message; }
     finally { clearTimeout(t); }
     if (!temTempo(5000)) break;
     await espera(800 * 2 ** i);
   }
-  throw new Error('PNCP não respondeu (' + ultimo + ')');
+  throw new Error(FREIO ? 'O PNCP limitou as consultas; continua na próxima rodada' : 'PNCP não respondeu (' + ultimo + ')');
 }
 const data = (v: unknown) => (v ? String(v).slice(0, 10) : null);
 const num = (v: unknown) => (v == null || v === '' ? null : Number(v));
@@ -45,6 +59,7 @@ const num = (v: unknown) => (v == null || v === '' ? null : Number(v));
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { db: { schema: 'consorcio' }, auth: { persistSession: false } });
+  FREIO = false;   // a instância pode ser reaproveitada entre chamadas
   try {
     const corpo = await req.json().catch(() => ({}));
     const acao = corpo.acao || 'processar';
@@ -107,7 +122,7 @@ Deno.serve(async (req) => {
     if (cfg?.rodando_ate && new Date(cfg.rodando_ate).getTime() > Date.now()) return resposta({ ok: true, ocupado: true, ate: cfg.rodando_ate });
     PRAZO = Date.now() + (origem === 'agenda' ? 115000 : 60000);
     await sb.from('etp_config').update({ rodando_ate: new Date(PRAZO + 20000).toISOString() }).eq('id', 1);
-    const res = { compras: 0, itens: 0, resultados: 0, contratos: 0, anos_concluidos: 0, revisitadas: 0, erros: [] as string[] };
+    const res = { compras: 0, itens: 0, resultados: 0, contratos: 0, anos_concluidos: 0, revisitadas: 0, limitado: false, erros: [] as string[] };
     const tocados = new Set<string>();
     try {
       await sb.rpc('etp_sincronizar');
@@ -248,6 +263,7 @@ Deno.serve(async (req) => {
         }
       };
       await Promise.all(Array.from({ length: PARALELO }, trabalhador));
+      res.limitado = FREIO;
       for (const c of tocados) await sb.rpc('etp_recontar', { p_cnpj: c });
     } finally {
       await sb.from('etp_config').update({ rodando_ate: null, ultima_execucao: new Date().toISOString(), ultimo_resultado: { ...res, erros: res.erros.slice(0, 20), origem } }).eq('id', 1);
