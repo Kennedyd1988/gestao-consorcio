@@ -386,7 +386,7 @@
       ['IRP', [['irps', 'Intenções de Registro de Preços']]],
     ],
     etp: [
-      ['Estimativa', [['etpestimativas', 'Estimativas de quantitativos']]],
+      ['Estimativa', [['etpestimativas', 'Estimativas de quantitativos'], ['etpmetodologias', 'Metodologias de preços']]],
       ['Fontes', [['etp', 'Entes e histórico do PNCP'], ['etpbusca', 'Pesquisar itens'], ['etpampliada', 'Pesquisa ampliada no PNCP'], ['etpconsumo', 'Consumo efetivo (TCE-RN)']]],
     ],
     consorciados: [

@@ -670,6 +670,19 @@
         return ok(await sb.from('etp_estimativas').insert({ ...reg, criado_por_nome: (window.NUCLEO && window.NUCLEO.estado.usuario && window.NUCLEO.estado.usuario.nome) || null }).select().single());
       },
       async etpExcluirEstimativa(id) { ok(await sb.from('etp_estimativas').delete().eq('id', id)); },
+      // ---- Entes centralizados e metodologias (script 21)
+      async enteUnidadesTce(orgao) { return ok(await sb.rpc('ente_unidades_tce', { p_orgao: orgao })); },
+      async entesConferirCnpj() { return ok(await sb.rpc('entes_conferir_cnpj')); },
+      async enteDefinirCnpj(orgao, cnpj) { ok(await sb.rpc('ente_definir_cnpj', { p_orgao: orgao, p_cnpj: cnpj })); },
+      async enteCnpjsExtras(orgao) { return ok(await sb.from('etp_entes_cnpj').select('cnpj, rotulo').eq('orgao_id', orgao)); },
+      async etpOrgaosNomes(cnpjs) { return cnpjs.length ? ok(await sb.from('etp_orgaos').select('cnpj, nome, situacao, compras, itens').in('cnpj', cnpjs)) : []; },
+      async etpMetodologias() { return ok(await sb.from('etp_metodologias').select('*').order('padrao', { ascending: false }).order('nome')); },
+      async etpSalvarMetodologia(m) {
+        const reg = { nome: m.nome, params: m.params, texto: m.texto, atualizado_em: new Date().toISOString() };
+        return ok(m.id ? await sb.from('etp_metodologias').update(reg).eq('id', m.id).select().single() : await sb.from('etp_metodologias').insert(reg).select().single());
+      },
+      async etpExcluirMetodologia(id) { ok(await sb.from('etp_metodologias').delete().eq('id', id)); },
+      async etpMetodologiaPadrao(id) { ok(await sb.rpc('etp_metodologia_padrao', { p_id: id })); },
       async etpBuscarAgora() { return ok(await sb.rpc('etp_buscar_agora')); },
       async etpStatus() { const r = await sb.rpc('etp_status'); return r.error ? null : r.data; },
       async etpContratos(cnpjs) { return ok(await sb.from('etp_contratos').select('*').in('cnpj', cnpjs).order('data_assinatura', { ascending: false, nullsFirst: false }).limit(1000)); },

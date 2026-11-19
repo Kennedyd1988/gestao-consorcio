@@ -75,7 +75,7 @@
       descricao: 'Estimativa de quantitativos por ente e pesquisa de preços para o ETP, com o histórico do PNCP, os empenhos do TCE-RN, a população e o Censo Escolar.',
       cor: '#0a8a62',
       inicio: '#etpestimativas',
-      rotas: ['etp', 'etpente', 'etpcompra', 'etpbusca', 'etpserie', 'etpconsumo', 'etpampliada', 'etpestimativas', 'etpestimativa'],
+      rotas: ['etp', 'etpente', 'etpcompra', 'etpbusca', 'etpserie', 'etpconsumo', 'etpampliada', 'etpestimativas', 'etpestimativa', 'etpmetodologias'],
     },
     {
       id: 'sistema',

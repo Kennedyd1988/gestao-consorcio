@@ -143,6 +143,7 @@
     const ind = (n, rot, cor, alvo) => el('button', { type: 'button', class: 'indicador', style: '--k:' + cor, onclick: alvo }, el('strong', null, n), el('span', null, rot));
     const nPend = conta((o) => o.pendente);
     rc(c, cabecalho('Entes e consorciados', 'Cadastro único dos entes. Todos os módulos (Adesões, IRP e os próximos) usam estes dados.',
+      pode() && D.entesConferirCnpj ? el('button', { type: 'button', class: 'btn btn-claro', onclick: dialogoConferirCnpj }, 'Conferir CNPJs (TCE-RN)') : null,
       pode() ? el('button', { type: 'button', class: 'btn btn-primario', onclick: () => N.formOrgao({}, (o) => { if (o && o.id) location.hash = '#ente-' + o.id; }) }, '+ Novo ente') : null),
     nPend ? el('p', { class: 'msg msg-falta' }, nPend + (nPend === 1 ? ' ente chegou' : ' entes chegaram') + ' de outro módulo e ' + (nPend === 1 ? 'está pendente' : 'estão pendentes') + ' de confirmação. Confira os dados e clique em "Confirmar ente" na ficha.') : null,
     el('div', { class: 'indicadores' },
@@ -174,6 +175,7 @@
       ['gestores', 'Gestores', () => abaGestores(o)],
       ['contatos', 'Contatos', () => abaContatos(o)],
       ['timbre', 'Brasão e timbre', () => abaTimbre(o)],
+      ['fontes', 'CNPJs e fontes de dados', () => abaFontes(o)],
     ], estado.abaEnte);
     caixaAbas.addEventListener('click', (ev) => { const b = ev.target.closest('[role="tab"]'); if (b) estado.abaEnte = b.id.replace('aba-', ''); });
     rc(c, el('p', { class: 'mb-1' }, el('a', { class: 'link', href: '#entes' }, '← Entes e consorciados')),
@@ -407,6 +409,79 @@
 
   // ---------- Aba: brasão e timbre
   // O timbre do ente sai nos documentos gerados em nome dele (ex.: Formulário Padrão da IRP).
+  // ---------- Conferência dos CNPJs com o TCE-RN (entes do RN)
+  async function dialogoConferirCnpj() {
+    const corpo = el('div', null, el('p', { class: 'vazio' }, 'Conferindo com o TCE-RN…'));
+    const d = abrirDialogo('Conferir CNPJs com o TCE-RN', corpo, [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Fechar')], true);
+    let l;
+    try { l = await D.entesConferirCnpj(); } catch (e) { rc(corpo, el('p', { class: 'msg msg-falta' }, /entes_conferir|schema cache/i.test(e.message) ? 'Rode o script 21 na Supabase.' : e.message)); return; }
+    const prob = l.filter((x) => x.situacao !== 'ok');
+    if (!l.length) { rc(corpo, el('p', { class: 'msg msg-falta' }, 'Ainda não há unidades do TCE-RN carregadas para os entes do RN. Tente de novo em alguns minutos.')); return; }
+    const aplicar = async (x, btn) => {
+      ocupado(btn, 'Gravando…');
+      try { await D.enteDefinirCnpj(x.id, x.cnpj_tce); x.situacao = 'ok'; x.cnpj = x.cnpj_tce; btn.replaceWith(el('span', { class: 'etiqueta etiqueta-ativo' }, 'Gravado')); }
+      catch (e) { toast(e.message, true); ocupado(btn); }
+    };
+    rc(corpo, el('p', null, l.length + ' ente(s) do RN conferido(s) com o CNPJ da prefeitura no TCE-RN: ', el('strong', null, prob.length ? prob.length + ' com CNPJ faltando ou diferente.' : 'todos conferem.')),
+      prob.length ? tabela(['Ente', 'CNPJ no Cadastro', 'CNPJ no TCE-RN', 'Situação', ''], prob.map((x) => {
+        const b = el('button', { type: 'button', class: 'btn btn-primario btn-p' }, x.situacao === 'falta' ? 'Preencher' : 'Trocar');
+        b.addEventListener('click', async () => {
+          if (x.situacao === 'diferente' && !(await confirmar('Trocar CNPJ', 'Trocar o CNPJ de ' + x.nome + ' de ' + O.formatarCnpj(x.cnpj) + (x.nome_pncp ? ' (no PNCP: ' + x.nome_pncp + ')' : '') + ' para ' + O.formatarCnpj(x.cnpj_tce) + ' (' + x.unidade + ')?', 'Trocar'))) return;
+          aplicar(x, b);
+        });
+        return el('tr', null, el('td', null, x.nome), el('td', { class: 'mono' }, x.cnpj ? O.formatarCnpj(x.cnpj) : '—', x.nome_pncp ? el('div', { class: 'ajuda' }, 'No PNCP: ' + x.nome_pncp) : null),
+          el('td', { class: 'mono' }, O.formatarCnpj(x.cnpj_tce), el('div', { class: 'ajuda' }, x.unidade)),
+          el('td', null, el('span', { class: 'etiqueta ' + (x.situacao === 'falta' ? 'etiqueta-pendente' : 'etiqueta-inativo') }, x.situacao === 'falta' ? 'Falta' : 'Diferente')), el('td', null, pode() ? b : null));
+      })) : null,
+      el('p', { class: 'ajuda' }, 'Depois de gravar, feche a janela: a lista é atualizada. Entes de fora do RN não aparecem aqui (o TCE-RN só tem os do Rio Grande do Norte).'));
+    d.addEventListener('close', () => depoisDeSalvar());
+  }
+
+  // ---------- Aba: CNPJs e fontes de dados (usada por todos os módulos)
+  function abaFontes(o) {
+    const box = el('div', null, el('p', { class: 'vazio' }, 'Carregando…'));
+    const ROT = ['Prefeitura', 'Fundo Municipal de Saúde', 'Fundo Municipal de Educação', 'Fundo Municipal de Assistência Social', 'Câmara Municipal', 'Autarquia', 'Outro'];
+    const carregar = async () => {
+      if (!D.enteUnidadesTce) { rc(box, el('p', { class: 'msg msg-falta' }, 'Disponível só com o banco.')); return; }
+      let extras, unidades, nomes = [];
+      try { [extras, unidades] = await Promise.all([D.enteCnpjsExtras(o.id), D.enteUnidadesTce(o.id)]); }
+      catch (e) { rc(box, el('p', { class: 'msg msg-falta' }, /ente_unidades|etp_entes|schema cache|does not exist/i.test(e.message) ? 'Rode os scripts 17 a 21 na Supabase para usar esta aba.' : e.message)); return; }
+      const principal = o.cnpj ? String(o.cnpj).replace(/\D/g, '') : null;
+      try { nomes = await D.etpOrgaosNomes([principal, ...extras.map((x) => x.cnpj)].filter(Boolean)); } catch (e) { nomes = []; }
+      const nomePncp = (c) => (nomes.find((x) => x.cnpj === c) || {});
+      const fC = txt('', { maxlength: 18, inputmode: 'numeric', placeholder: '00.000.000/0000-00' }), fR = sel(ROT.map((r) => [r, r]), 'Fundo Municipal de Saúde');
+      const bAdd = el('button', { type: 'button', class: 'btn btn-claro' }, 'Incluir CNPJ');
+      bAdd.addEventListener('click', async () => {
+        const c = fC.value.replace(/\D/g, '');
+        if (!marcarErro(fC, c.length === 14 ? '' : 'CNPJ com 14 números.')) return;
+        ocupado(bAdd, 'Incluindo…');
+        try { await D.etpIncluirCnpj(o.id, c, fR.value); toast('CNPJ incluído.'); carregar(); } catch (e) { toast(e.message, true); ocupado(bAdd); }
+      });
+      const linhaCnpj = (c, rot, extra) => {
+        const n = nomePncp(c);
+        return el('tr', null, el('td', { class: 'mono' }, O.formatarCnpj(c)), el('td', null, rot), el('td', null, n.nome || el('span', { class: 'ajuda' }, 'ainda não lido'), n.compras ? el('div', { class: 'ajuda' }, n.compras + ' compra(s) no histórico') : null),
+          el('td', null, extra && pode() ? el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: async () => { if (!(await confirmar('Tirar CNPJ', 'Tirar o CNPJ ' + O.formatarCnpj(c) + ' deste ente?', 'Tirar'))) return; try { await D.etpRemoverCnpj(o.id, c); carregar(); } catch (e) { toast(e.message, true); } } }, 'Tirar') : extra ? null : el('span', { class: 'ajuda' }, 'CNPJ do cadastro (aba Dados)')));
+      };
+      rc(box,
+        el('h3', null, 'CNPJs do ente'),
+        el('p', { class: 'ajuda' }, 'Todos os CNPJs que compram em nome do ente (prefeitura, fundos municipais, câmara, autarquias). Servem para o histórico de compras no PNCP usado na pesquisa de preços e nas estimativas.'),
+        (principal || extras.length) ? tabela(['CNPJ', 'O que é', 'Nome no PNCP', ''], [principal ? linhaCnpj(principal, 'Principal', false) : null, ...extras.map((x) => linhaCnpj(x.cnpj, x.rotulo || 'Outro', true))].filter(Boolean)) : el('p', { class: 'msg msg-falta' }, 'Nenhum CNPJ. Informe o CNPJ principal na aba Dados do ente.'),
+        pode() ? el('div', { class: 'filtros-linha' }, campo('fo-c', 'CNPJ', fC), campo('fo-r', 'O que é', fR), el('div', { class: 'campo' }, bAdd),
+          window.ETP_DIALOGOS ? el('div', { class: 'campo' }, el('button', { type: 'button', class: 'btn btn-texto', onclick: () => window.ETP_DIALOGOS.descobrir({ id: o.id, nome: o.nome, municipio: o.municipio, uf: o.uf, cnpjs: [principal, ...extras.map((x) => x.cnpj)].filter(Boolean) }, carregar) }, 'Descobrir no PNCP')) : null) : null,
+        el('h3', null, 'Unidades no TCE-RN'),
+        el('p', { class: 'ajuda' }, 'Unidades do município que mandam os empenhos ao TCE-RN (SIAI, Anexo 14). Marque as que contam como consumo do ente: em geral a prefeitura e os fundos.'),
+        unidades.length ? tabela(['', 'Unidade', 'CNPJ', 'Empenhos lidos'], unidades.map((u) => {
+          const ck = el('input', { type: 'checkbox', checked: u.incluir, disabled: !pode() });
+          ck.addEventListener('change', async () => { try { await D.etpUnidadeIncluir(o.id, u.identificador, ck.checked); toast(ck.checked ? 'Unidade incluída.' : 'Unidade retirada.'); } catch (e) { toast(e.message, true); ck.checked = !ck.checked; } });
+          const cnpjDif = u.tipo === 'prefeitura' && u.cnpj && principal && u.cnpj !== principal;
+          return el('tr', null, el('td', null, ck), el('td', null, u.nome), el('td', { class: 'mono' }, u.cnpj ? O.formatarCnpj(u.cnpj) : '—', cnpjDif ? el('div', { class: 'msg-curta msg-falta' }, 'Diferente do CNPJ do cadastro') : null),
+            el('td', null, (u.anos || []).map((a) => el('span', { class: 'etiqueta ' + (a.lido_em ? 'etiqueta-ativo' : 'etiqueta-pendente'), title: a.erro || '' }, a.ano + (a.lido_em ? ': ' + a.empenhos : '…')))));
+        })) : el('p', { class: 'ajuda' }, String(o.uf || '').toUpperCase() === 'RN' ? 'Nenhuma unidade encontrada. Confira se o campo Município está igual ao nome oficial do IBGE.' : 'O TCE-RN só tem os entes do Rio Grande do Norte.'));
+    };
+    carregar();
+    return box;
+  }
+
   function abaTimbre(o) {
     const peca = (chave, titulo, ajuda) => {
       const atual = o[chave];

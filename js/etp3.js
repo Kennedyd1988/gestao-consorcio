@@ -129,7 +129,7 @@
             ...anosV.map((a) => el('td', { class: 'num' }, val(o, a).valor ? rs(val(o, a).valor) : '—', val(o, a).empenhos ? el('div', { class: 'ajuda' }, val(o, a).empenhos + ' emp.') : null)),
             el('td', { class: 'num' }, el('strong', null, rs(media(o)))),
             el('td', { class: 'acoes' }, el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: () => dialogoEmpenhos(cat, o, f.anoIni, f.anoFim) }, 'Empenhos'),
-              el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: () => dialogoUnidades(o, async () => { await entesDados(true); entes = cache.entes; desenhar(); }) }, 'Unidades')));
+              N.perfilEm('consorciados') ? el('a', { class: 'btn btn-texto btn-p', href: '#ente-' + o.id, onclick: () => { estado.abaEnte = 'fontes'; } }, 'Unidades no Cadastro') : el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: () => dialogoUnidades(o) }, 'Unidades')));
         })) : el('p', { class: 'vazio' }, 'Nenhum ente do RN no Cadastro.'));
     };
     fCat.addEventListener('change', () => { f.cat = fCat.value; desenhar(); });
@@ -180,6 +180,72 @@
   // CNPJs das pesquisas ampliadas marcadas (usado pela tela "Pesquisar itens")
   window.ETP_PESQUISAS = { lista: () => D.etpPesquisas() };
 
+  // ================================================================ METODOLOGIAS DE PESQUISA DE PREÇOS
+  const TEXTO_PADRAO_MET = 'A pesquisa de preços observou o art. 23 da Lei nº 14.133/2021. Foram utilizados preços homologados em contratações similares publicadas no Portal Nacional de Contratações Públicas (PNCP) {FONTES}, {JANELA}. {IPCA} {CRITERIO} O valor de referência de cada item corresponde {REFERENCIA} dos preços válidos, exigindo-se no mínimo {MIN} preços por item; quando não atingido esse número, a pesquisa foi complementada por outros parâmetros do art. 23, § 1º, com a devida justificativa.';
+  function dialogoMetodologia(x, depois) {
+    const c = criterios(x.params);
+    const f = {
+      nome: txt(x.nome || '', { maxlength: 160 }),
+      janela: el('input', { type: 'number', min: 0, max: 120, value: c.janela_meses, class: 'campo-num' }),
+      ipca: el('input', { type: 'checkbox', checked: c.ipca }),
+      entes: el('input', { type: 'checkbox', checked: c.fontes.entes }), ampl: el('input', { type: 'checkbox', checked: c.fontes.ampliadas }),
+      crit: sel([['percentual', 'Percentual da mediana'], ['desvio', 'Desvio-padrão em torno da média'], ['nenhum', 'Não excluir']], c.criterio),
+      abaixo: el('input', { type: 'number', min: 0, max: 100, value: c.abaixo, class: 'campo-num' }), acima: el('input', { type: 'number', min: 100, value: c.acima, class: 'campo-num' }),
+      desvios: el('input', { type: 'number', min: 0.5, step: 0.5, value: c.desvios, class: 'campo-num' }),
+      ref: sel([['mediana', 'Mediana'], ['media', 'Média'], ['menor', 'Menor preço'], ['cv', 'Automática: média se o coeficiente de variação for baixo, senão mediana']], c.referencia),
+      cv: el('input', { type: 'number', min: 1, max: 100, value: c.cv_limite, class: 'campo-num' }),
+      min: el('input', { type: 'number', min: 1, max: 20, value: c.min_precos, class: 'campo-num' }),
+      texto: area(x.texto || TEXTO_PADRAO_MET, { rows: 7 }),
+    };
+    const prev = el('p', { class: 'texto-modelo previa-met' });
+    const params = () => ({ janela_meses: Number(f.janela.value) || 0, ipca: f.ipca.checked, fontes: { entes: f.entes.checked, ampliadas: f.ampl.checked }, criterio: f.crit.value,
+      abaixo: Number(f.abaixo.value) || 70, acima: Number(f.acima.value) || 130, desvios: Number(f.desvios.value) || 1, referencia: f.ref.value, cv_limite: Number(f.cv.value) || 25, min_precos: Number(f.min.value) || 3 });
+    const boxPerc = el('div', { class: 'filtros-linha' }, el('label', { class: 'check-linha' }, 'Inexequível abaixo de ', f.abaixo, '% da mediana'), el('label', { class: 'check-linha' }, 'Excessivo acima de ', f.acima, '% da mediana'));
+    const boxDp = el('div', { class: 'filtros-linha' }, el('label', { class: 'check-linha' }, 'Excluir fora de ±', f.desvios, ' desvio(s)-padrão'));
+    const boxCv = el('div', { class: 'filtros-linha' }, el('label', { class: 'check-linha' }, 'Usar a média quando o coeficiente de variação for de até ', f.cv, '%'));
+    const atualizar = () => { boxPerc.hidden = f.crit.value !== 'percentual'; boxDp.hidden = f.crit.value !== 'desvio'; boxCv.hidden = f.ref.value !== 'cv'; prev.textContent = textoMetodologia(f.texto.value, params()); };
+    Object.values(f).forEach((e) => e.addEventListener && e.addEventListener('input', atualizar)); [f.crit, f.ref, f.ipca, f.entes, f.ampl].forEach((e) => e.addEventListener('change', atualizar));
+    const b = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar');
+    const d = abrirDialogo(x.id ? 'Editar metodologia' : 'Nova metodologia de pesquisa de preços', el('div', null,
+      campo('mt-n', 'Nome', f.nome, 'Ex.: Padrão do consórcio; Serviços contínuos (24 meses)', true),
+      el('h3', null, 'Fontes e período'),
+      el('div', { class: 'filtros-linha' }, el('label', { class: 'check-linha' }, f.entes, ' Preços dos próprios entes'), el('label', { class: 'check-linha' }, f.ampl, ' Preços de outros órgãos (pesquisas ampliadas)'),
+        el('label', { class: 'check-linha' }, 'Período: últimos ', f.janela, ' meses (0 = sem limite)'), el('label', { class: 'check-linha' }, f.ipca, ' Corrigir pelo IPCA')),
+      el('h3', null, 'Valores fora da curva'), campo('mt-c', 'Critério de exclusão', f.crit), boxPerc, boxDp,
+      el('h3', null, 'Valor de referência'), campo('mt-r', 'Referência', f.ref), boxCv, el('label', { class: 'check-linha' }, 'Mínimo de ', f.min, ' preços válidos por item'),
+      el('h3', null, 'Texto para o ETP e o Termo de Referência'),
+      el('p', { class: 'ajuda' }, 'Marcadores: {FONTES}, {JANELA}, {IPCA}, {CRITERIO}, {REFERENCIA}, {MIN}. Eles são trocados pelos critérios acima.'),
+      campo('mt-t', 'Texto', f.texto), el('p', { class: 'ajuda' }, 'Como fica:'), prev),
+    [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), b], true);
+    atualizar();
+    b.addEventListener('click', async () => {
+      if (!N.marcarErro(f.nome, f.nome.value.trim() ? '' : 'Informe o nome.')) return;
+      ocupado(b, 'Salvando…');
+      try { await D.etpSalvarMetodologia({ id: x.id, nome: f.nome.value.trim(), params: params(), texto: f.texto.value.trim() }); d.close(); toast('Metodologia salva.'); depois && depois(); }
+      catch (e) { toast(e.message, true); ocupado(b); }
+    });
+  }
+  TELAS.etpmetodologias = async (c) => {
+    carregando(c);
+    let l;
+    try { l = await D.etpMetodologias(); } catch (e) { rc(c, cabecalho('Metodologias de pesquisa de preços'), el('p', { class: 'msg msg-falta' }, /etp_metodologias|schema cache/i.test(e.message) ? 'Rode o script 21 na Supabase.' : e.message)); return; }
+    const re = () => TELAS.etpmetodologias(c);
+    rc(c, voltar('#etpestimativas', 'Estimativas'), cabecalho('Metodologias de pesquisa de preços', 'Critérios padronizados (período, correção, exclusão de valores fora da curva, valor de referência e mínimo de preços) e o texto que vai para o ETP e o TR. Cada estimativa escolhe uma; a padrão entra sozinha nas novas.',
+        pode() ? el('button', { type: 'button', class: 'btn btn-primario', onclick: () => dialogoMetodologia({}, re) }, '+ Metodologia') : null),
+      l.length ? tabela(['Metodologia', 'Critérios', ''], l.map((x) => {
+        const k = criterios(x.params);
+        return el('tr', null, el('td', null, el('strong', null, x.nome), x.padrao ? el('div', null, el('span', { class: 'etiqueta etiqueta-ativo' }, 'Padrão')) : null),
+          el('td', { class: 'texto-longo' }, [Number(k.janela_meses) > 0 ? 'Últimos ' + k.janela_meses + ' meses' : 'Sem limite de período', k.ipca ? 'IPCA' : 'Sem correção',
+            k.criterio === 'percentual' ? 'Exclui abaixo de ' + k.abaixo + '% e acima de ' + k.acima + '% da mediana' : k.criterio === 'desvio' ? 'Exclui fora de ±' + k.desvios + ' DP' : 'Sem exclusão',
+            'Referência: ' + ({ mediana: 'mediana', media: 'média', menor: 'menor preço', cv: 'média se CV ≤ ' + k.cv_limite + '%, senão mediana' })[k.referencia], 'Mínimo ' + k.min_precos + ' preços',
+            [k.fontes.entes ? 'entes' : null, k.fontes.ampliadas ? 'outros órgãos' : null].filter(Boolean).join(' e ')].join(' · ')),
+          el('td', { class: 'acoes' }, pode() ? [el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: () => dialogoMetodologia(x, re) }, 'Editar'),
+            el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: () => dialogoMetodologia({ nome: x.nome + ' (cópia)', params: x.params, texto: x.texto }, re) }, 'Duplicar'),
+            !x.padrao ? el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: async () => { try { await D.etpMetodologiaPadrao(x.id); toast('Agora é a padrão.'); re(); } catch (e) { toast(e.message, true); } } }, 'Tornar padrão') : null,
+            !x.padrao ? el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: async () => { if (!(await confirmar('Excluir metodologia', 'Excluir "' + x.nome + '"? As estimativas que a usam guardam uma cópia dos critérios.', 'Excluir', true))) return; try { await D.etpExcluirMetodologia(x.id); re(); } catch (e) { toast(e.message, true); } } }, 'Excluir') : null] : null));
+      })) : el('p', { class: 'vazio' }, 'Nenhuma metodologia.'));
+  };
+
   // ================================================================ 3. ESTIMATIVAS DE QUANTITATIVOS
   const METODOS = { eventos: 'Modelo por eventos', historico: 'Histórico no PNCP', indicador: 'Indicador (Censo Escolar / população)', manual: 'Manual por ente' };
   const PORTES = () => [{ id: 'I', ate: 5000 }, { id: 'II', ate: 10000 }, { id: 'III', ate: 20000 }, { id: 'IV', ate: null }];
@@ -189,7 +255,7 @@
       tipos: [{ cod: 'A', nome: 'Festa principal (emancipação ou padroeiro)', dias: 2, freq: { I: 1, II: 1, III: 1, IV: 1 } }],
       itens: [], entes: {}, ajustes: {},
       fator: { usar: false, categoria: null, anos: [anoAtual - 2, anoAtual - 1], min: 1, max: 4 },
-      precos: { ultimoAno: true, abaixo: 70, acima: 130, referencia: 'mediana', pesquisas: [] },
+      precos: {},
       resultado: {},
     };
   }
@@ -306,19 +372,48 @@
     const a = achar(mes), b = achar(refMes);
     return a && b ? b / a : 1;
   }
-  function analisarPrecos(obs, cfg, ipca) {
+  // Critérios da metodologia (com valores padrão e compatibilidade com estimativas antigas)
+  const PADRAO_MET = { janela_meses: 12, ipca: true, fontes: { entes: true, ampliadas: true }, criterio: 'percentual', abaixo: 70, acima: 130, desvios: 1, referencia: 'mediana', cv_limite: 25, min_precos: 3 };
+  function criterios(c) {
+    const x = Object.assign({}, PADRAO_MET, c || {});
+    if (c && c.ultimoAno != null && c.janela_meses == null) x.janela_meses = c.ultimoAno ? 12 : 0;
+    x.fontes = Object.assign({}, PADRAO_MET.fontes, (c && c.fontes) || {});
+    return x;
+  }
+  function analisarPrecos(obs, cfg0, ipca) {
+    const cfg = criterios(cfg0);
     const refMes = ipca.length ? ipca[ipca.length - 1].mes : null;
-    const limite = new Date(); limite.setFullYear(limite.getFullYear() - 1);
-    const lista = obs.map((o) => ({ ...o, corrigido: Number(o.valor) * ipcaFator(ipca, o.data, refMes), antigo: o.data && new Date(o.data) < limite }));
-    const base = lista.filter((o) => !(cfg.excluidos || []).includes(o.item_id + '|' + o.fornecedor) && !(cfg.ultimoAno && o.antigo));
-    const med = (v) => { const s = [...v].sort((a, b) => a - b); return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : null; };
-    const m0 = med(base.map((o) => o.corrigido));
-    base.forEach((o) => { o.fora = m0 != null && (o.corrigido < m0 * cfg.abaixo / 100 ? 'inexequível' : o.corrigido > m0 * cfg.acima / 100 ? 'excessivo' : null); });
+    const limite = new Date(); limite.setMonth(limite.getMonth() - Number(cfg.janela_meses || 0));
+    const lista = obs.map((o) => ({ ...o, corrigido: Number(o.valor) * (cfg.ipca ? ipcaFator(ipca, o.data, refMes) : 1), antigo: Number(cfg.janela_meses) > 0 && o.data && new Date(o.data) < limite }));
+    const exc = cfg0 && cfg0.excluidos || [];
+    const base = lista.filter((o) => !exc.includes(o.item_id + '|' + o.fornecedor) && !o.antigo);
+    const med = (v) => { const s2 = [...v].sort((p, q) => p - q); return s2.length ? (s2.length % 2 ? s2[(s2.length - 1) / 2] : (s2[s2.length / 2 - 1] + s2[s2.length / 2]) / 2) : null; };
+    const media = (v) => (v.length ? v.reduce((t, x) => t + x, 0) / v.length : null);
+    const dp = (v) => { const m0 = media(v); return v.length > 1 ? Math.sqrt(v.reduce((t, x) => t + (x - m0) ** 2, 0) / (v.length - 1)) : 0; };
+    const vals = base.map((o) => o.corrigido);
+    if (cfg.criterio === 'percentual') { const m0 = med(vals); base.forEach((o) => { o.fora = m0 != null && (o.corrigido < m0 * cfg.abaixo / 100 ? 'inexequível' : o.corrigido > m0 * cfg.acima / 100 ? 'excessivo' : null); }); }
+    else if (cfg.criterio === 'desvio') { const m0 = media(vals), d0 = dp(vals); base.forEach((o) => { o.fora = d0 > 0 && (o.corrigido < m0 - cfg.desvios * d0 ? 'inexequível' : o.corrigido > m0 + cfg.desvios * d0 ? 'excessivo' : null); }); }
+    else base.forEach((o) => { o.fora = null; });
     const validos = base.filter((o) => !o.fora).map((o) => o.corrigido);
-    const res = { n: validos.length, mediana: med(validos), media: validos.length ? validos.reduce((s, v) => s + v, 0) / validos.length : null, menor: validos.length ? Math.min(...validos) : null, refMes };
-    res.valor = cfg.referencia === 'media' ? res.media : cfg.referencia === 'menor' ? res.menor : res.mediana;
-    lista.forEach((o) => { const b = base.find((x) => x === o || (x.item_id === o.item_id && x.fornecedor === o.fornecedor)); o.situacao = (cfg.excluidos || []).includes(o.item_id + '|' + o.fornecedor) ? 'excluído à mão' : cfg.ultimoAno && o.antigo ? 'mais de 1 ano' : b && b.fora ? b.fora : 'válido'; });
+    const res = { n: validos.length, mediana: med(validos), media: media(validos), menor: validos.length ? Math.min(...validos) : null, refMes };
+    res.cv = res.media ? (dp(validos) / res.media) * 100 : null;
+    res.regra = cfg.referencia === 'cv' ? (res.cv != null && res.cv <= cfg.cv_limite ? 'media' : 'mediana') : cfg.referencia;
+    res.valor = res.regra === 'media' ? res.media : res.regra === 'menor' ? res.menor : res.mediana;
+    res.suficiente = res.n >= Number(cfg.min_precos || 0);
+    lista.forEach((o) => { const b2 = base.find((x) => x.item_id === o.item_id && x.fornecedor === o.fornecedor); o.situacao = exc.includes(o.item_id + '|' + o.fornecedor) ? 'excluído à mão' : o.antigo ? 'fora do período' : b2 && b2.fora ? b2.fora : 'válido'; });
     return { lista, res };
+  }
+  // Texto da metodologia com os marcadores preenchidos
+  const ROT_REF = { mediana: 'à mediana', media: 'à média', menor: 'ao menor valor', cv: 'à média, quando o coeficiente de variação for de até {CV}%, ou à mediana, quando maior' };
+  function textoMetodologia(texto, c0) {
+    const c = criterios(c0);
+    const fontes = [c.fontes.entes ? 'pelos próprios entes' : null, c.fontes.ampliadas ? 'por outros órgãos e entidades da Administração Pública' : null].filter(Boolean).join(' e ');
+    const crit = c.criterio === 'percentual' ? 'Foram desconsiderados, como inexequíveis ou excessivamente elevados, os valores inferiores a ' + c.abaixo + '% ou superiores a ' + c.acima + '% da mediana do conjunto.'
+      : c.criterio === 'desvio' ? 'Foram desconsiderados, como inexequíveis ou excessivamente elevados, os valores fora do intervalo de ' + String(c.desvios).replace('.', ',') + ' desvio(s)-padrão em torno da média.'
+      : 'Não houve exclusão de valores por critério estatístico.';
+    return String(texto || '').replace(/\{FONTES\}/g, fontes ? fontes : '').replace(/\{JANELA\}/g, Number(c.janela_meses) > 0 ? 'em execução ou concluídas no período de ' + c.janela_meses + ' meses anteriores (art. 23, § 1º, II)' : 'sem limite de período')
+      .replace(/\{IPCA\}/g, c.ipca ? 'Os valores foram atualizados pelo IPCA até o mês mais recente disponível.' : '').replace(/\{CRITERIO\}/g, crit)
+      .replace(/\{REFERENCIA\}/g, ROT_REF[c.referencia] || 'à mediana').replace(/\{CV\}/g, c.cv_limite).replace(/\{MIN\}/g, c.min_precos).replace(/\s+\./g, '.').replace(/ {2,}/g, ' ');
   }
 
   // Escolher séries do histórico para um item (busca nos entes e nas pesquisas ampliadas)
@@ -362,11 +457,16 @@
     if (!est) { rc(c, voltar('#etpestimativas', 'Estimativas'), el('p', { class: 'msg msg-erro' }, 'Estimativa não encontrada.')); return; }
     est.dados = Object.assign(novoModelo(), est.dados || {});
     const m = est.dados;
-    m.precos = Object.assign(novoModelo().precos, m.precos || {});
+    m.precos = m.precos || {};
     m.fator = Object.assign(novoModelo().fator, m.fator || {});
-    let ctx, R, cats = [], ipca = [], indicadores = [];
-    try { [ctx, cats, ipca, indicadores] = await Promise.all([contexto(est), categorias(), D.etpIpca(), D.etpIndicadores().catch(() => [])]); }
+    let ctx, R, cats = [], ipca = [], indicadores = [], metodologias = [];
+    try { [ctx, cats, ipca, indicadores, metodologias] = await Promise.all([contexto(est), categorias(), D.etpIpca(), D.etpIndicadores().catch(() => []), D.etpMetodologias ? D.etpMetodologias().catch(() => []) : []]); }
     catch (e) { rc(c, el('p', { class: 'msg msg-erro' }, e.message)); return; }
+    // metodologia: na primeira vez, a padrão do consórcio
+    if (!m.precos.metodologia_id && m.precos.janela_meses == null && m.precos.ultimoAno == null) {
+      const pad = metodologias.find((x) => x.padrao);
+      if (pad) m.precos = Object.assign(criterios(pad.params), { metodologia_id: pad.id, metodologia_nome: pad.nome, texto: pad.texto });
+    }
     // entes: na primeira vez, todos os consorciados ativos (ou todos os ativos, se nenhum tiver vínculo)
     if (!Object.keys(m.entes).length) {
       const cons = ctx.entes.filter((o) => o.ativo !== false && o.vinculo === 'consorciado');
@@ -555,18 +655,26 @@
 
     // ----- aba Preços (pesquisa de preços por item, art. 23)
     const abaPrecos = () => {
-      const cfg = m.precos;
-      const ult = el('input', { type: 'checkbox', checked: !!cfg.ultimoAno }), ab = el('input', { type: 'number', min: 0, max: 100, value: cfg.abaixo, class: 'campo-num' }), ac = el('input', { type: 'number', min: 100, value: cfg.acima, class: 'campo-num' });
-      const ref = sel([['mediana', 'Mediana'], ['media', 'Média'], ['menor', 'Menor preço']], cfg.referencia);
-      [ult, ab, ac, ref].forEach((x) => x.addEventListener('change', () => { cfg.ultimoAno = ult.checked; cfg.abaixo = Number(ab.value) || 70; cfg.acima = Number(ac.value) || 130; cfg.referencia = ref.value; mudou(); }));
-      return [el('p', { class: 'ajuda' }, 'Fonte: preços homologados no PNCP (art. 23, § 1º, II, da Lei nº 14.133/2021), das séries escolhidas para cada item — dos entes e das pesquisas ampliadas. Valores corrigidos pelo IPCA até ' + mesBR(ipca.length ? ipca[ipca.length - 1].mes : null) + '. Os critérios valem para todos os itens.'),
-        el('div', { class: 'filtros-linha' }, el('label', { class: 'check-linha' }, ult, ' Só contratações do último ano (art. 23, § 1º, II)'),
-          el('label', { class: 'check-linha' }, 'Inexequível abaixo de ', ab, '% da mediana'), el('label', { class: 'check-linha' }, 'Excessivo acima de ', ac, '%'), campo('pr-ref', 'Valor de referência', ref)),
+      const c0 = criterios(m.precos);
+      const fMet = sel([['', 'Critérios próprios desta estimativa'], ...metodologias.map((x) => [x.id, x.nome + (x.padrao ? ' (padrão)' : '')])], m.precos.metodologia_id || '');
+      fMet.disabled = !pode();
+      fMet.addEventListener('change', () => {
+        const x = metodologias.find((y) => y.id === fMet.value);
+        if (x) m.precos = Object.assign(criterios(x.params), { metodologia_id: x.id, metodologia_nome: x.nome, texto: x.texto });
+        else m.precos = Object.assign(criterios(m.precos), { metodologia_id: null, metodologia_nome: null });
+        mudou(); redesenhar('precos', 'res');
+      });
+      const resumo = [Number(c0.janela_meses) > 0 ? 'últimos ' + c0.janela_meses + ' meses' : 'sem limite de período', c0.ipca ? 'IPCA' : 'sem correção',
+        c0.criterio === 'percentual' ? 'exclui fora de ' + c0.abaixo + '%–' + c0.acima + '% da mediana' : c0.criterio === 'desvio' ? 'exclui fora de ±' + c0.desvios + ' desvio(s)-padrão' : 'sem exclusão',
+        'referência: ' + ({ mediana: 'mediana', media: 'média', menor: 'menor preço', cv: 'média se CV ≤ ' + c0.cv_limite + '%, senão mediana' })[c0.referencia], 'mínimo ' + c0.min_precos + ' preços'].join(' · ');
+      return [el('p', { class: 'ajuda' }, 'Fonte: preços homologados no PNCP (art. 23, § 1º, II, da Lei nº 14.133/2021) das séries escolhidas para cada item. IPCA disponível até ' + mesBR(ipca.length ? ipca[ipca.length - 1].mes : null) + '.'),
+        el('div', { class: 'filtros-linha' }, campo('pr-met', 'Metodologia de pesquisa de preços', fMet), el('div', { class: 'campo' }, el('a', { class: 'link', href: '#etpmetodologias' }, 'Ver e editar as metodologias'))),
+        el('p', { class: 'msg msg-info' }, resumo),
         m.itens.length ? tabela(['Nº', 'Item', 'Séries', 'Preços válidos', 'Referência', 'Fonte', ''], m.itens.map((it, k) => el('tr', null,
           el('td', { class: 'num' }, k + 1), el('td', { class: 'texto-longo' }, it.descricao, el('div', { class: 'ajuda' }, it.unidade)),
-          el('td', { class: 'num' }, (it.series || []).length), el('td', { class: 'num' }, it.preco && it.preco.n != null ? it.preco.n : '—'),
+          el('td', { class: 'num' }, (it.series || []).length), el('td', { class: 'num' }, it.preco && it.preco.n != null ? it.preco.n : '—', it.preco && it.preco.n != null && it.preco.n < c0.min_precos ? el('div', { class: 'aviso-etp' }, 'abaixo do mínimo') : null),
           el('td', { class: 'num' }, it.preco && it.preco.valor ? el('strong', null, rs(it.preco.valor)) : '—'),
-          el('td', null, it.preco ? (it.preco.fonte === 'manual' ? 'Informado à mão' : 'Pesquisa PNCP' + (it.preco.refMes ? ' (IPCA até ' + mesBR(it.preco.refMes) + ')' : '')) : '—'),
+          el('td', null, it.preco ? (it.preco.fonte === 'manual' ? 'Informado à mão' : 'Pesquisa PNCP' + (it.preco.refMes && c0.ipca ? ' (IPCA até ' + mesBR(it.preco.refMes) + ')' : '')) : '—'),
           el('td', { class: 'acoes' }, el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: () => dialogoPrecos(it) }, 'Pesquisar'))))) : el('p', { class: 'vazio' }, 'Inclua itens primeiro.')];
     };
     const dialogoPrecos = async (it) => {
@@ -580,16 +688,17 @@
         }
         carregando(corpo, 'Buscando os preços…');
         let pesq = []; try { pesq = await D.etpPesquisas(); } catch (e) { }
-        const cnpjs = [...new Set([...ctx.entes.flatMap((o) => o.cnpjs), ...pesq.filter((p) => (it.pesquisas || []).includes(p.id)).flatMap((p) => p.cnpjs)])];
+        const cm = criterios(m.precos);
+        const cnpjs = [...new Set([...(cm.fontes.entes ? ctx.entes.flatMap((o) => o.cnpjs) : []), ...(cm.fontes.ampliadas ? pesq.filter((p) => (it.pesquisas || []).includes(p.id)).flatMap((p) => p.cnpjs) : [])])];
         let obs = [];
         try { obs = await D.etpPrecos(it.series, cnpjs); } catch (e) { rc(corpo, el('p', { class: 'msg msg-erro' }, e.message)); return; }
         const cfg = Object.assign({}, m.precos, { excluidos: it.excluidos || [] });
         const { lista, res } = analisarPrecos(obs, cfg, ipca);
         const usar = el('button', { type: 'button', class: 'btn btn-primario', disabled: !res.valor || !pode() }, 'Usar ' + (res.valor ? rs(res.valor) : '—') + ' como referência');
-        usar.addEventListener('click', () => { it.preco = { valor: Math.round(res.valor * 100) / 100, n: res.n, mediana: res.mediana, media: res.media, menor: res.menor, refMes: res.refMes, fonte: 'pesquisa', criterio: { ...m.precos }, data: new Date().toISOString().slice(0, 10) }; it.cotacoes = lista.map((o) => ({ orgao: o.orgao, uf: o.uf, data: o.data, compra: o.compra, link: o.link, descricao: o.descricao.slice(0, 200), unidade: o.unidade, valor: o.valor, corrigido: o.corrigido, fornecedor: o.fornecedor, situacao: o.situacao })); recalc(); mudou(); redesenhar('precos', 'res', 'dados', 'itens'); toast('Preço de referência definido.'); d.close(); });
+        usar.addEventListener('click', () => { it.preco = { valor: Math.round(res.valor * 100) / 100, n: res.n, mediana: res.mediana, media: res.media, menor: res.menor, cv: res.cv, regra: res.regra, refMes: res.refMes, fonte: 'pesquisa', criterio: criterios(m.precos), data: new Date().toISOString().slice(0, 10) }; it.cotacoes = lista.map((o) => ({ orgao: o.orgao, uf: o.uf, data: o.data, compra: o.compra, link: o.link, descricao: o.descricao.slice(0, 200), unidade: o.unidade, valor: o.valor, corrigido: o.corrigido, fornecedor: o.fornecedor, situacao: o.situacao })); recalc(); mudou(); redesenhar('precos', 'res', 'dados', 'itens'); toast('Preço de referência definido.'); d.close(); });
         rc(corpo,
-          el('div', { class: 'resumo-precos' }, el('span', null, el('strong', null, res.n), ' preço(s) válido(s) de ', lista.length), el('span', null, 'Mediana ', el('strong', null, rs(res.mediana))), el('span', null, 'Média ', el('strong', null, rs(res.media))), el('span', null, 'Menor ', el('strong', null, rs(res.menor)))),
-          res.n < 3 ? el('p', { class: 'msg msg-falta' }, 'Menos de 3 preços válidos. Amplie a pesquisa (pesquisa ampliada no PNCP, desmarcar "último ano") ou complemente com outras fontes do art. 23 (cotações, painel de preços).') : null,
+          el('div', { class: 'resumo-precos' }, el('span', null, el('strong', null, res.n), ' preço(s) válido(s) de ', lista.length), el('span', null, 'Mediana ', el('strong', null, rs(res.mediana))), el('span', null, 'Média ', el('strong', null, rs(res.media))), el('span', null, 'Menor ', el('strong', null, rs(res.menor))), res.cv != null ? el('span', null, 'CV ', el('strong', null, n0(res.cv, 1) + '%')) : null, el('span', null, 'Referência: ', el('strong', null, ({ mediana: 'mediana', media: 'média', menor: 'menor preço' })[res.regra]))),
+          !res.suficiente ? el('p', { class: 'msg msg-falta' }, 'Menos de ' + criterios(m.precos).min_precos + ' preços válidos. Amplie a pesquisa (pesquisa ampliada no PNCP ou metodologia com período maior) ou complemente com outras fontes do art. 23 (cotações, painel de preços).') : null,
           el('div', { class: 'botoes-linha mb-1' }, pode() ? el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: () => escolherSeries(it, [...new Set(ctx.entes.flatMap((o) => o.cnpjs))], () => { mudou(); desenhar(); }) }, 'Trocar séries') : null, usar),
           lista.length ? el('div', { class: 'tabela-rolagem' }, tabela(['', 'Data', 'Órgão', 'Compra', 'Descrição', 'Unid.', 'Preço', 'Corrigido', 'Situação'], lista.map((o) => {
             const chave = o.item_id + '|' + o.fornecedor;
@@ -635,7 +744,9 @@
       if (Object.values(m.ajustes || {}).some((x) => Object.keys(x).length)) p.push('Algumas quantidades foram ajustadas pontualmente, conforme indicado na memória de cálculo.');
       if (m.itens.some((i) => i.extra)) p.push('Foram incluídas, ainda, quantidades de outros participantes, indicadas na coluna "Extra" do quadro consolidado.');
       const comPreco = m.itens.filter((i) => i.preco && i.preco.fonte === 'pesquisa');
-      if (comPreco.length) p.push('Os preços de referência foram obtidos por pesquisa de preços nos termos do art. 23, § 1º, II, da Lei nº 14.133/2021, a partir de preços homologados em contratações similares publicadas no PNCP' + (m.precos.ultimoAno ? ' no período de 1 (um) ano anterior' : '') + ', corrigidos pelo IPCA, desconsiderados os valores inferiores a ' + m.precos.abaixo + '% e superiores a ' + m.precos.acima + '% da mediana, adotando-se a ' + ({ mediana: 'mediana', media: 'média', menor: 'menor valor' })[m.precos.referencia] + ' dos valores válidos.');
+      if (comPreco.length) p.push(textoMetodologia(m.precos.texto || (metodologias.find((x) => x.padrao) || {}).texto || 'A pesquisa de preços observou o art. 23 da Lei nº 14.133/2021, com preços homologados no PNCP {JANELA}. {IPCA} {CRITERIO} O valor de referência corresponde {REFERENCIA} dos preços válidos.', m.precos));
+      const manuais = m.itens.filter((i) => i.preco && i.preco.fonte === 'manual');
+      if (manuais.length) p.push('Para ' + manuais.length + ' item(ns), o preço de referência foi obtido por outras fontes do art. 23, § 1º, conforme indicado no Anexo (' + [...new Set(manuais.map((i) => i.preco.origem).filter(Boolean))].join('; ') + ').');
       p.push('A memória de cálculo, os parâmetros adotados e a distribuição dos quantitativos por órgão participante constam do Anexo (Planilha de Estimativa de Quantitativos), que integra este ETP.');
       p.push('Por se tratar de registro de preços, os quantitativos ora estimados representam as quantidades máximas a serem registradas (art. 82, I, da Lei nº 14.133/2021) e não geram obrigação de contratação, podendo ser ajustados no Termo de Referência após a validação junto aos entes.');
       return p.join('\n\n');
@@ -654,6 +765,7 @@
           ['Fator de consumo', m.fator.usar ? 'Sim' : 'Não', 'Categoria', (cats.find((k) => k.id === m.fator.categoria) || {}).nome || '', 'Anos', (m.fator.anos || []).join(', '), 'Mín.', m.fator.min, 'Máx.', m.fator.max]], [12, 50, 14, 14, 14, 14, 14, 14]],
         ['Entes', [['Ente', 'UF', 'Vínculo', 'População', 'Porte', 'Consumo médio (R$)', 'Valor-base (R$)', 'Fator'], ...ents.map((o) => { const x = R.info[o.id]; return [o.nome, o.uf, o.vinculo || '', x.pop, x.porte, x.consumo, R.valorBase[x.porte], x.fator]; })], [40, 5, 14, 11, 7, 16, 16, 8]],
         ['Memória', [['Item', 'Descrição', 'Ente', 'Quantidade', 'Memória de cálculo'], ...m.itens.flatMap((it, k) => ents.map((o) => [k + 1, it.descricao, o.nome, R.qtd[it.id][o.id], R.memo[it.id][o.id]]))], [6, 40, 36, 10, 90]],
+        ['Metodologia de preços', [['Metodologia', m.precos.metodologia_nome || 'Critérios próprios'], ['Texto', textoMetodologia(m.precos.texto || TEXTO_PADRAO_MET, m.precos)]], [24, 140]],
         ['Pesquisa de preços', [['Item', 'Descrição', 'Data', 'Órgão', 'UF', 'Compra', 'Descrição no PNCP', 'Unidade', 'Preço (R$)', 'Corrigido IPCA (R$)', 'Situação', 'Contratado', 'Link'],
           ...m.itens.flatMap((it, k) => (it.cotacoes || []).map((o) => [k + 1, it.descricao, dataBR(o.data), o.orgao, o.uf, o.compra, o.descricao, o.unidade, Number(o.valor), Math.round(o.corrigido * 100) / 100, o.situacao, o.fornecedor, o.link]))], [6, 30, 11, 30, 5, 18, 50, 10, 12, 14, 14, 30, 40]],
       ]);
@@ -747,5 +859,5 @@
   };
 
   N.PENDENCIAS.etp = N.PENDENCIAS.etp || (() => null);
-  window.ETP3 = { calcular, analisarPrecos, porteDe, novoModelo, ipcaFator };
+  window.ETP3 = { calcular, analisarPrecos, porteDe, novoModelo, ipcaFator, textoMetodologia, criterios };
 })();

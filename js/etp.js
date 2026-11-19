@@ -83,6 +83,14 @@
     });
   }
 
+  // CNPJs e unidades do TCE ficam no Cadastro de Consorciados (cadastro único dos entes)
+  const temCadastro = () => !!N.perfilEm('consorciados');
+  function linkCadastro(o, rotulo) {
+    return temCadastro() ? el('a', { class: 'btn btn-texto btn-p', href: '#ente-' + o.id, onclick: () => { estado.abaEnte = 'fontes'; } }, rotulo || 'CNPJs no Cadastro')
+      : el('span', { class: 'ajuda' }, 'CNPJs: no Cadastro de Consorciados');
+  }
+  window.ETP_DIALOGOS = { descobrir: (o, depois) => dialogoDescobrir(Object.assign({}, o, { cnpjs: (o.cnpjs || []).map((c) => (typeof c === 'string' ? { cnpj: c } : c)) }), depois) };
+
   // ---------------------------------------------------------------- 1. Entes e histórico
   TELAS.etp = async (c) => {
     carregando(c, 'Carregando os entes…');
@@ -109,8 +117,7 @@
             : el('span', { class: 'etiqueta etiqueta-pendente' }, 'Sem CNPJ')),
           el('td', { class: 'num' }, n0(tot('compras'))), el('td', { class: 'num' }, n0(tot('itens'))), el('td', { class: 'num' }, n0(tot('contratos'))),
           el('td', { class: 'acoes' }, el('a', { class: 'btn btn-claro btn-p', href: '#etpente-' + o.id }, 'Abrir'),
-            pode() ? el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: () => dialogoDescobrir(o, desenharTudo) }, 'Descobrir no PNCP') : null,
-            pode() ? el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: () => dialogoCnpj(o, desenharTudo) }, '+ CNPJ') : null));
+            linkCadastro(o)));
       })) : el('p', { class: 'vazio' }, 'Nenhum ente com esses filtros.'));
     };
     const desenharTudo = () => { p = E.painel; desenhar(); };
@@ -123,7 +130,7 @@
       el('p', { class: 'msg msg-info' }, 'O sistema lê no PNCP, sozinho, a cada minuto, as licitações, dispensas e inexigibilidades de cada CNPJ (desde 2023, do ano mais recente para o mais antigo), com itens, quantidades, preços homologados e contratos. A primeira carga de um ente pode levar algumas horas. Fila: ',
         el('strong', null, p.fila.pendentes ? p.fila.pendentes + ' de ' + p.fila.total + ' ano(s) por ler' : 'tudo lido'), '.',
         st && st.em_voo ? ' Consultas ao PNCP em andamento: ' + st.em_voo + '.' : '', st && st.ultima_execucao ? ' Última rodada: ' + new Date(st.ultima_execucao).toLocaleString('pt-BR') + '.' : ''),
-      semCnpj ? el('p', { class: 'msg msg-falta' }, semCnpj + ' ente(s) sem CNPJ no Cadastro. Use "Descobrir no PNCP" para achar a prefeitura e os fundos municipais, ou "+ CNPJ".') : null,
+      semCnpj ? el('p', { class: 'msg msg-falta' }, semCnpj + ' ente(s) sem CNPJ. Os CNPJs ficam no Cadastro de Consorciados (ficha do ente, aba "CNPJs e fontes de dados"); lá dá para conferir com o TCE-RN e descobrir os fundos no PNCP.') : null,
       comErro ? el('p', { class: 'msg msg-erro' }, comErro + ' ente(s) com CNPJ que o PNCP mostra com outro nome. Confira o CNPJ no Cadastro de Consorciados.') : null,
       el('div', { class: 'filtros-linha' }, campo('etp-b', 'Buscar', busca), el('label', { class: 'check-linha' }, soCom, ' Só os que têm CNPJ')),
       caixa);
@@ -140,9 +147,8 @@
     f.cnpjs = f.cnpjs.filter((x) => cnpjsDoEnte(o).includes(x)); if (!f.cnpjs.length) f.cnpjs = cnpjsDoEnte(o);
     const topo = [voltar('#etp', 'Entes'), cabecalho(o.nome, [o.municipio, o.uf].filter(Boolean).join('/') || 'Histórico no PNCP',
       el('a', { class: 'btn btn-primario', href: '#etpbusca', onclick: () => { E.busca.entes = [o.id]; } }, 'Pesquisar itens deste ente'),
-      pode() ? el('button', { type: 'button', class: 'btn btn-claro', onclick: () => dialogoDescobrir(o, () => TELAS.etpente(c, id)) }, 'Descobrir no PNCP') : null,
-      pode() ? el('button', { type: 'button', class: 'btn btn-claro', onclick: () => dialogoCnpj(o, () => TELAS.etpente(c, id)) }, '+ CNPJ') : null)];
-    if (!o.cnpjs.length) { rc(c, ...topo, el('p', { class: 'msg msg-falta' }, 'Este ente não tem CNPJ no Cadastro nem CNPJ incluído aqui. Use "Descobrir no PNCP" ou "+ CNPJ".')); return; }
+      linkCadastro(o, 'Editar CNPJs no Cadastro'))];
+    if (!o.cnpjs.length) { rc(c, ...topo, el('p', { class: 'msg msg-falta' }, 'Este ente não tem CNPJ. Informe no Cadastro de Consorciados (ficha do ente, aba "CNPJs e fontes de dados").')); return; }
     // CNPJs: situação e escolha
     const chips = el('div', { class: 'cnpjs-ente' }, o.cnpjs.map((x) => {
       const ck = el('input', { type: 'checkbox', checked: f.cnpjs.includes(x.cnpj) });
@@ -152,10 +158,7 @@
         el('div', { class: 'ajuda' }, x.nome_pncp || 'Ainda não lido no PNCP', ' · ', n0(x.compras), ' compra(s) · ', n0(x.itens), ' item(ns)'),
         !nomeConfere(o, x) ? el('div', { class: 'msg-curta msg-falta' }, 'No PNCP este CNPJ é de ' + x.nome_pncp + '. Confira o CNPJ no Cadastro.') : null,
         el('div', { class: 'etiquetas-linha' }, etqSit(x.situacao), ...anos),
-        pode() && !x.do_cadastro ? el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: async () => {
-          if (!(await confirmar('Tirar CNPJ', 'Tirar o CNPJ ' + cnpjF(x.cnpj) + ' (' + x.rotulo + ') do histórico deste ente? Os dados do PNCP continuam guardados.', 'Tirar'))) return;
-          try { await D.etpRemoverCnpj(o.id, x.cnpj); await painel(true); TELAS.etpente(c, id); } catch (e) { toast(e.message, true); }
-        } }, 'Tirar') : null);
+        null);
     }));
     const corpo = el('div'), corpoK = el('div');
     const caixaAbas = N.abas([['compras', 'Compras e itens', () => corpo], ['contratos', 'Contratos', () => { desenharContratos(); return corpoK; }]], f.aba);
