@@ -86,12 +86,12 @@
   // ---------------------------------------------------------------- 1. Entes e histórico
   TELAS.etp = async (c) => {
     carregando(c, 'Carregando os entes…');
-    let p;
-    try { p = await painel(true); } catch (e) { rc(c, cabecalho('Pesquisa de preços e quantitativos'), el('p', { class: 'msg ' + (e.semScript ? 'msg-falta' : 'msg-erro') }, e.message)); return; }
+    let p, st = null;
+    try { p = await painel(true); st = await D.etpStatus(); } catch (e) { rc(c, cabecalho('Pesquisa de preços e quantitativos'), el('p', { class: 'msg ' + (e.semScript ? 'msg-falta' : 'msg-erro') }, e.message)); return; }
     const bAgora = el('button', { type: 'button', class: 'btn btn-claro' }, 'Buscar agora no PNCP');
     bAgora.addEventListener('click', async () => {
-      ocupado(bAgora, 'Lendo o PNCP (até 1 minuto)…');
-      try { const r = await D.etpFuncao({ acao: 'processar' }); toast(r.ocupado ? 'Já há uma leitura em andamento. Tente de novo em alguns minutos.' : `Leitura feita: ${r.compras} compra(s), ${r.itens} item(ns), ${r.resultados} preço(s)${r.erros && r.erros.length ? '. Alguns pontos não responderam e serão lidos na próxima rodada.' : '.'}`); TELAS.etp(c); }
+      ocupado(bAgora, 'Enviando…');
+      try { const r = await D.etpBuscarAgora(); toast(r && r.ocupado ? 'A leitura já está em andamento.' : 'Consultas enviadas ao PNCP. As respostas entram em até 1 minuto.'); setTimeout(() => TELAS.etp(c), 1500); }
       catch (e) { toast(e.message, true); ocupado(bAgora); }
     });
     const busca = el('input', { type: 'search', placeholder: 'Buscar ente', 'aria-label': 'Buscar ente', value: E.filtroEntes || '' });
@@ -120,8 +120,9 @@
     const comErro = p.entes.filter((o) => o.cnpjs.some((x) => !nomeConfere(o, x))).length;
     rc(c, cabecalho('Pesquisa de preços e quantitativos', 'Histórico das contratações de cada ente no PNCP, para justificar quantitativos e pesquisar preços no ETP.',
         el('a', { class: 'btn btn-primario', href: '#etpbusca' }, 'Pesquisar itens'), pode() ? bAgora : null),
-      el('p', { class: 'msg msg-info' }, 'O sistema lê no PNCP, sozinho, a cada 5 minutos, as licitações, dispensas e inexigibilidades de cada CNPJ (desde 2023, do ano mais recente para o mais antigo), com itens, quantidades, preços homologados e contratos. A primeira carga de um ente pode levar algumas horas. Fila: ',
-        el('strong', null, p.fila.pendentes ? p.fila.pendentes + ' de ' + p.fila.total + ' ano(s) por ler' : 'tudo lido'), '.'),
+      el('p', { class: 'msg msg-info' }, 'O sistema lê no PNCP, sozinho, a cada minuto, as licitações, dispensas e inexigibilidades de cada CNPJ (desde 2023, do ano mais recente para o mais antigo), com itens, quantidades, preços homologados e contratos. A primeira carga de um ente pode levar algumas horas. Fila: ',
+        el('strong', null, p.fila.pendentes ? p.fila.pendentes + ' de ' + p.fila.total + ' ano(s) por ler' : 'tudo lido'), '.',
+        st && st.em_voo ? ' Consultas ao PNCP em andamento: ' + st.em_voo + '.' : '', st && st.ultima_execucao ? ' Última rodada: ' + new Date(st.ultima_execucao).toLocaleString('pt-BR') + '.' : ''),
       semCnpj ? el('p', { class: 'msg msg-falta' }, semCnpj + ' ente(s) sem CNPJ no Cadastro. Use "Descobrir no PNCP" para achar a prefeitura e os fundos municipais, ou "+ CNPJ".') : null,
       comErro ? el('p', { class: 'msg msg-erro' }, comErro + ' ente(s) com CNPJ que o PNCP mostra com outro nome. Confira o CNPJ no Cadastro de Consorciados.') : null,
       el('div', { class: 'filtros-linha' }, campo('etp-b', 'Buscar', busca), el('label', { class: 'check-linha' }, soCom, ' Só os que têm CNPJ')),

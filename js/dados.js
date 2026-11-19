@@ -643,6 +643,8 @@
         return data;
       },
       async etpCompras(f) { return ok(await sb.rpc('etp_compras_lista', { p_cnpjs: f.cnpjs, p_ano: f.ano || null, p_modalidade: f.modalidade || null, p_texto: f.texto || null, p_offset: f.offset || 0, p_limite: f.limite || 50 })); },
+      async etpBuscarAgora() { return ok(await sb.rpc('etp_buscar_agora')); },
+      async etpStatus() { const r = await sb.rpc('etp_status'); return r.error ? null : r.data; },
       async etpContratos(cnpjs) { return ok(await sb.from('etp_contratos').select('*').in('cnpj', cnpjs).order('data_assinatura', { ascending: false, nullsFirst: false }).limit(1000)); },
       async etpCompra(controle) { return ok(await sb.rpc('etp_compra', { p_controle: controle })); },
       async etpBuscar(f) { return ok(await sb.rpc('etp_buscar', { p_texto: f.texto, p_cnpjs: f.cnpjs, p_ano_ini: f.anoIni || null, p_ano_fim: f.anoFim || null, p_limite: f.limite || 100 })); },
