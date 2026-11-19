@@ -60,7 +60,7 @@
     if (!gestorAtual(o.id)) f.push('Gestor atual');
     if (!o.email) f.push('E-mail do ente');
     if (!contatosDe(o.id).some((x) => x.ativo && x.recebe_avisos && (x.email || x.whatsapp)) && !o.whatsapp) f.push('Contato que recebe os avisos (e-mail ou WhatsApp)');
-    if (!o.brasao_url && !o.timbre_cabecalho_url) f.push('Brasão ou timbre');
+    if (!o.timbre_rodape_url && !o.endereco) f.push('Endereço (sai no rodapé padrão dos documentos)');
     return f;
   }
 
@@ -417,22 +417,37 @@
           atual ? el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: tirar }, 'Tirar') : null) : null);
     };
     return el('div', null,
-      el('p', { class: 'ajuda' }, 'O Formulário Padrão da IRP (e outros documentos gerados em nome do ente) sai com este timbre. Se houver a imagem do cabeçalho, ela é usada inteira; se não, o sistema monta o cabeçalho com o brasão, o nome, o CNPJ e o endereço.'),
+      el('p', { class: 'ajuda' }, 'O Formulário Padrão da IRP (e outros documentos gerados em nome do ente) sai com este timbre. Com imagem enviada, ela é usada inteira. Sem imagem, o sistema gera um padrão só com os textos do cadastro: no cabeçalho, o nome e o CNPJ (com o brasão, se houver); no rodapé, o endereço e os contatos. O documento nunca sai sem cabeçalho nem rodapé.'),
       el('div', { class: 'grade grade-3' },
         peca('brasao_url', 'Brasão', 'PNG com fundo transparente, de preferência quadrado.'),
-        peca('timbre_cabecalho_url', 'Cabeçalho do timbre', 'A faixa de cima do papel timbrado da prefeitura (largura da folha).'),
-        peca('timbre_rodape_url', 'Rodapé do timbre', 'Opcional: a faixa de baixo, com endereço e contatos.')),
+        peca('timbre_cabecalho_url', 'Cabeçalho do timbre', 'A faixa de cima do papel timbrado (largura da folha). Sem ela, sai o cabeçalho padrão com o nome e o CNPJ.'),
+        peca('timbre_rodape_url', 'Rodapé do timbre', 'A faixa de baixo do papel timbrado. Sem ela, sai o rodapé padrão com endereço e contatos.')),
       el('section', { class: 'cartao' }, el('h3', null, 'Como o cabeçalho sai nos documentos'), previaTimbre(o)));
   }
+  // Timbre do ente para os documentos. Sem imagem anexada, o sistema gera um padrão só com os textos do cadastro
+  // (o documento nunca sai sem cabeçalho nem rodapé). Usado na prévia e no PDF do Formulário Padrão da IRP.
+  function timbreDoEnte(o) {
+    const cidade = [o.municipio, o.uf].filter(Boolean).join('/');
+    const cabecalho = o.timbre_cabecalho_url ? { imagem: url(o.timbre_cabecalho_url) }
+      : { brasao: o.brasao_url ? url(o.brasao_url) : null, titulo: String(o.nome || '').toUpperCase(),
+          linhas: [o.cnpj ? 'CNPJ ' + O.formatarCnpj(o.cnpj) : null, o.vinculo === 'consorciado' ? 'Ente consorciado ao CIMOP' : null].filter(Boolean) };
+    const rodape = o.timbre_rodape_url ? { imagem: url(o.timbre_rodape_url) }
+      : { linhas: [[o.endereco, o.bairro, o.cep ? 'CEP ' + o.cep : null, cidade].filter(Boolean).join(' · '),
+          [o.telefone ? 'Tel. ' + o.telefone : null, o.whatsapp && o.whatsapp !== o.telefone ? 'WhatsApp ' + o.whatsapp : null, o.email, o.site ? o.site.replace(/^https?:\/\//i, '') : null].filter(Boolean).join(' · ')]
+          .filter(Boolean) };
+    if (!rodape.imagem && !rodape.linhas.length) rodape.linhas = [String(o.nome || '') + (cidade ? ' · ' + cidade : '')];
+    return { cabecalho, rodape, gerado: { cabecalho: !cabecalho.imagem, rodape: !rodape.imagem } };
+  }
   function previaTimbre(o) {
-    if (o.timbre_cabecalho_url) return el('div', { class: 'previa-folha' }, el('img', { class: 'previa-cabecalho', src: url(o.timbre_cabecalho_url), alt: 'Cabeçalho do timbre' }),
-      el('div', { class: 'previa-linhas', 'aria-hidden': 'true' }, el('span'), el('span'), el('span')),
-      o.timbre_rodape_url ? el('img', { class: 'previa-rodape', src: url(o.timbre_rodape_url), alt: 'Rodapé do timbre' }) : null);
-    return el('div', { class: 'previa-folha' },
-      el('div', { class: 'previa-montado' }, o.brasao_url ? el('img', { src: url(o.brasao_url), alt: 'Brasão' }) : el('span', { class: 'previa-sem-brasao' }, 'sem brasão'),
-        el('div', null, el('strong', null, String(o.nome || '').toUpperCase()), o.cnpj ? el('span', null, 'CNPJ ' + O.formatarCnpj(o.cnpj)) : null,
-          el('span', null, [o.endereco, o.bairro, [o.municipio, o.uf].filter(Boolean).join('/'), o.cep ? 'CEP ' + o.cep : null].filter(Boolean).join(' · ') || 'endereço não informado'))),
-      el('div', { class: 'previa-linhas', 'aria-hidden': 'true' }, el('span'), el('span'), el('span')));
+    const t = timbreDoEnte(o);
+    const cab = t.cabecalho.imagem ? el('img', { class: 'previa-cabecalho', src: t.cabecalho.imagem, alt: 'Cabeçalho do timbre' })
+      : el('div', { class: 'previa-montado' + (t.cabecalho.brasao ? '' : ' previa-sem-imagem') }, t.cabecalho.brasao ? el('img', { src: t.cabecalho.brasao, alt: 'Brasão' }) : null,
+        el('div', null, el('strong', null, t.cabecalho.titulo), t.cabecalho.linhas.map((l) => el('span', null, l))));
+    const rod = t.rodape.imagem ? el('img', { class: 'previa-rodape', src: t.rodape.imagem, alt: 'Rodapé do timbre' })
+      : el('div', { class: 'previa-rodape-texto' }, t.rodape.linhas.map((l) => el('span', null, l)));
+    return el('div', null,
+      el('div', { class: 'previa-folha' }, cab, el('div', { class: 'previa-linhas', 'aria-hidden': 'true' }, el('span'), el('span'), el('span')), rod),
+      el('p', { class: 'ajuda mt-1' }, 'Cabeçalho: ' + (t.gerado.cabecalho ? 'padrão gerado com os textos do cadastro' + (t.cabecalho.brasao ? ' e o brasão' : '') : 'imagem enviada') + '. Rodapé: ' + (t.gerado.rodape ? 'padrão gerado com o endereço e os contatos do cadastro' : 'imagem enviada') + '.'));
   }
 
   // ================================================================= PESSOAS DO CIMOP
@@ -500,5 +515,5 @@
 
   // Para os outros módulos: escolher quem assina, achar o ente, montar o timbre.
   window.CADASTRO = { pendencias, gestorAtual: (id, f) => (cad() ? gestorAtual(id, f) : null), contatosDe: (id) => (cad() ? contatosDe(id) : []),
-    signatarios: () => (cad() ? cad().pessoas.filter((p) => p.ativo && p.assina_documentos) : []), linkWhats, cpfMascarado, url, VINCULO, SITUACAO };
+    signatarios: () => (cad() ? cad().pessoas.filter((p) => p.ativo && p.assina_documentos) : []), timbreDoEnte, linkWhats, cpfMascarado, url, VINCULO, SITUACAO };
 })();
