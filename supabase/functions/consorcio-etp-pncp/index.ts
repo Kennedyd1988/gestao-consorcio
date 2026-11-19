@@ -17,8 +17,8 @@ const resposta = (corpo: unknown, status = 200) => new Response(JSON.stringify(c
 const API = 'https://pncp.gov.br/api';
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const LIMITE_FALHAS = 25;          // números seguidos sem compra para dar o ano por lido
-const PARALELO = 2;                // leituras ao mesmo tempo (o PNCP limita consultas seguidas: HTTP 429)
-const INTERVALO = 300;             // pausa mínima entre consultas (ms)
+const PARALELO = 1;                // uma leitura por vez (o PNCP limita consultas seguidas: HTTP 429)
+const INTERVALO = 700;             // pausa mínima entre consultas (ms)
 let PRAZO = 0;                     // hora-limite desta execução (ms)
 let FREIO = false;                 // o PNCP pediu para parar (429 repetido): encerra esta execução
 const temTempo = (folga = 0) => !FREIO && Date.now() + folga < PRAZO;
@@ -35,7 +35,7 @@ async function pegar(url: string, tentativas = 3, limiteMs = 25000): Promise<any
     const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), limiteMs);
     try {
       const r = await fetch(url, { signal: ctl.signal, headers: { accept: 'application/json', 'user-agent': 'SOFT+ Consorcios (gestao-consorcio; etp)' } });
-      if (r.status === 204 || r.status === 404) return null;
+      if (r.status === 204 || r.status === 404 || r.status === 410) return null;   // 410: compra excluída no PNCP
       if (r.ok) { const txt = await r.text(); return txt ? JSON.parse(txt) : null; }
       ultimo = 'HTTP ' + r.status;
       if (r.status === 400) return null;
