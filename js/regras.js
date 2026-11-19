@@ -1,4 +1,4 @@
-/* Regras de adesão – art. 86, §§ 4º, 5º e 8º, da Lei nº 14.133/2021 e art. 29 da Resolução CIMOP nº 018/2023.
+/* Regras de adesão – art. 86, §§ 4º, 5º e 8º, da Lei nº 14.133/2021 e regulamento do SRP do consórcio.
    As mesmas regras rodam no banco (registrar_pedido); aqui servem para mostrar o resultado enquanto se digita. */
 (function () {
   const R = {};

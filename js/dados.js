@@ -119,6 +119,12 @@
         if (!reg.id) { reg.id = uid(); lista.push(reg); } else { const i = lista.findIndex((x) => x.id === reg.id); i >= 0 ? (lista[i] = { ...lista[i], ...reg }) : lista.push(reg); }
         if (tabela === 'pedidos' && reg.numero_oficio && lista.some((p) => p.id !== reg.id && p.numero_oficio === reg.numero_oficio)) throw new Error('Já existe um ofício com o número ' + reg.numero_oficio + '.');
         if (tabela === 'periodos') sincronizarVigencia(base, reg.ata_id);
+        if (tabela === 'normas') {
+          const n = lista.find((x) => x.id === reg.id);
+          if (n.papel) lista.forEach((x) => { if (x.id !== n.id && x.papel === n.papel) x.papel = null; });
+          const t = (pp) => (lista.find((x) => x.papel === pp) || {}).titulo;
+          base.config.resolucao_srp = t('srp') || base.config.resolucao_srp; base.config.resolucao_alteracao = t('srp_alteracao') || null;
+        }
         salvarLocal(); indexar(base); return reg;
       },
       async salvarConfig(c) { base.config = { ...base.config, ...c }; salvarLocal(); },
@@ -127,8 +133,18 @@
         for (const t of ['orgao_leis', 'orgao_gestores', 'orgao_contatos', 'pessoas']) base[t] = base[t] || [];
         if (!base.pessoas.length) base.pessoas.push({ id: uid(), nome: base.config.presidente_nome, cargo: 'Presidente', ativo: true, assina_documentos: true });
         base.integracao = base.integracao || ['entes', 'pessoas', 'identidade'].map((item) => ({ item, ativo: false }));
-        return { orgaos: base.orgaos, leis: base.orgao_leis, gestores: base.orgao_gestores, contatos: base.orgao_contatos, pessoas: base.pessoas, config: base.config, integracao: base.integracao, errosSite: [] };
+        if (!base.integracao.some((i) => i.item === 'documentos')) base.integracao.push({ item: 'documentos', ativo: false });
+        if (!base.normas) base.normas = [{ id: uid(), tipo: 'resolucao', titulo: base.config.resolucao_srp, numero: '018/2023', data: '2023-05-02', papel: 'srp', vigente: true },
+          { id: uid(), tipo: 'resolucao', titulo: base.config.resolucao_alteracao, numero: '001/2026', data: '2026-02-10', papel: 'srp_alteracao', vigente: true }];
+        base.documentos = base.documentos || [];
+        if (base.config.usar_timbre_modelo == null) base.config.usar_timbre_modelo = true;
+        if (base.config.logo_url === undefined) base.config.logo_url = 'logo-cimop.jpg';   // demonstração: logotipo que vem no app
+        return { orgaos: base.orgaos, leis: base.orgao_leis, gestores: base.orgao_gestores, contatos: base.orgao_contatos, pessoas: base.pessoas, config: base.config, integracao: base.integracao, errosSite: [],
+          normas: base.normas, documentos: base.documentos };
       },
+      async identidade() { await carregar(); const c = base.config; if (c.logo_url === undefined) c.logo_url = 'logo-cimop.jpg'; return { orgao_nome: c.orgao_nome, sigla: c.sigla, cidade_uf: c.cidade_uf, email: c.email_institucional || 'cimop.rn@gmail.com', telefone: c.telefone, logo_url: c.logo_url || null }; },
+      async siteOrgaos() { return [{ id: 'p1', nome: 'Consórcio Intermunicipal Multifinalitário dos Municípios do Oeste Potiguar', sigla: 'CIMOP', cnpj: '15185079000140', atual: !!base.config.portal_orgao_id }]; },
+      async siteDefinirPortal(id) { if (base.integracao.some((i) => i.ativo)) throw new Error('Desligue todas as integrações antes de trocar o órgão do Portal.'); base.config.portal_orgao_id = id || null; salvarLocal(); },
       async integracao() { await api.carregarCadastro(); return { itens: base.integracao, erros: [] }; },
       async integracaoConferir(item) {
         if (item === 'identidade') return { site: { nome_exibicao: base.config.orgao_nome, email: 'cimop.rn@gmail.com' }, gestao: { nome_exibicao: base.config.orgao_nome } };
@@ -402,9 +418,15 @@
         const [orgaos, leis, gestores, contatos, pessoas, config, integ, erros] = await Promise.all([tudo('orgaos'), tudo('orgao_leis'), tudo('orgao_gestores'), tudo('orgao_contatos'), tudo('pessoas'),
           sb.from('configuracoes').select('*').eq('id', 1).single().then(ok),
           sb.from('integracao').select('*').then((r) => (r.error ? [] : r.data)), sb.from('integracao_erros').select('*').then((r) => (r.error ? [] : r.data))]);
-        return { orgaos, leis, gestores, contatos, pessoas, config, integracao: integ, errosSite: erros };
+        // Módulo Consórcio (script 14): sem o script, as listas ficam vazias
+        const [normas, documentos] = await Promise.all([sb.from('normas').select('*').order('data', { ascending: false }).then((r) => (r.error ? null : r.data)),
+          sb.from('documentos').select('*').order('data', { ascending: false }).then((r) => (r.error ? null : r.data))]);
+        return { orgaos, leis, gestores, contatos, pessoas, config, integracao: integ, errosSite: erros, normas: normas || [], documentos: documentos || [], semScript14: normas === null };
       },
       async excluir(tabela, id) { ok(await sb.from(tabela).delete().eq('id', id)); },
+      async identidade() { const r = await sb.rpc('publico_identidade'); return r.error ? null : r.data; },
+      async siteOrgaos() { return ok(await sb.rpc('site_orgaos')); },
+      async siteDefinirPortal(id) { ok(await sb.rpc('site_definir_portal', { p_orgao: id || null })); },
       // ---------- Integração com o site (script 12)
       async integracao() {
         const r = await sb.from('integracao').select('*').order('item');

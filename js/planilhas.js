@@ -65,7 +65,7 @@
         responsavel: txt(col(l, 'Responsável')) || null, cargo: txt(col(l, 'Cargo')) || null, email: txt(col(l, 'E-mail')) || null };
     });
     const adesoes = aba(wb, 'Adesões').filter((l) => txt(col(l, 'ARP'))).map((l, i) => {
-      const a = { numero_oficio: txt(col(l, 'Ofício CIMOP')) || null, data_oficio: data(col(l, 'Data do ofício')), orgao_nome: txt(col(l, 'Órgão')),
+      const a = { numero_oficio: txt(col(l, 'Ofício do consórcio', 'Ofício CIMOP')) || null, data_oficio: data(col(l, 'Data do ofício')), orgao_nome: txt(col(l, 'Órgão')),
         oficio_solicitante: txt(col(l, 'Ofício do solicitante')) || null, ata_numero: numeroAta(col(l, 'ARP')), item: Number(num(col(l, 'Item'))), qtd: num(col(l, 'Qtd')), periodo: Number(num(col(l, 'Período')) || 1) };
       if (!orgaos.some((o) => R_n(o.nome) === R_n(a.orgao_nome))) erros.push(`Adesões, linha ${i + 2}: o órgão "${a.orgao_nome}" não está na aba Órgãos.`);
       return a;
@@ -89,7 +89,7 @@
     add('Vigências', ['ARP', 'Período', 'Início', 'Fim', 'Renova quantitativos? (Sim/Não)', 'Instrumento', 'Observações'], ['001/2026', 1, '05/01/2026', '05/01/2027', 'Não', 'Vigência original', '']);
     add('Órgãos', ['Nome do órgão/entidade', 'CNPJ', 'Município', 'UF', 'Esfera', 'Responsável (destinatário do ofício)', 'Cargo', 'E-mail'],
       ['Município de Exemplo/RN', '00.000.000/0001-00', 'Exemplo', 'RN', 'Municipal', 'NOME DO RESPONSÁVEL', 'Prefeito Municipal', 'contato@exemplo.rn.gov.br']);
-    add('Adesões', ['Ofício CIMOP', 'Data do ofício', 'Órgão/entidade', 'Ofício do solicitante', 'ARP', 'Item', 'Qtd autorizada', 'Período'], ['105/2026', '27/10/2026', 'Município de Exemplo/RN', '172/2026', '001/2026', 1, 200, 1]);
+    add('Adesões', ['Ofício do consórcio', 'Data do ofício', 'Órgão/entidade', 'Ofício do solicitante', 'ARP', 'Item', 'Qtd autorizada', 'Período'], ['105/2026', '27/10/2026', 'Município de Exemplo/RN', '172/2026', '001/2026', 1, 200, 1]);
     return XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
   }
 
@@ -122,7 +122,7 @@
   }
 
   function listaPedidos(base, peds) {
-    const linhas = [['Ofício CIMOP', 'Data', 'Órgão', 'CNPJ', 'Ofício solicitante', 'Situação', 'ARP', 'Item', 'Descrição', 'Und', 'Qtd solicitada', 'Qtd autorizada', 'Decisão', 'Motivo']];
+    const linhas = [['Ofício do consórcio', 'Data', 'Órgão', 'CNPJ', 'Ofício solicitante', 'Situação', 'ARP', 'Item', 'Descrição', 'Und', 'Qtd solicitada', 'Qtd autorizada', 'Decisão', 'Motivo']];
     for (const p of peds) {
       const o = base.orgaosPorId[p.orgao_id];
       for (const pi of base.pedido_itens.filter((x) => x.pedido_id === p.id)) {

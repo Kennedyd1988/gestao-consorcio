@@ -35,12 +35,12 @@
         window.NOTAS_VERSAO = v.notas || [];
         try { localStorage.setItem('gestao_consorcio_versao', v.versao); } catch (e) {}
         var q = '?v=' + encodeURIComponent(v.versao);
-        ['css/estilos.css', 'css/adesoes.css', 'css/modulos.css', 'css/consorciados.css', 'css/irp.css'].forEach(function (h, i) {
+        ['css/estilos.css', 'css/adesoes.css', 'css/modulos.css', 'css/consorciados.css', 'css/irp.css', 'css/consorcio.css'].forEach(function (h, i) {
           var css = document.createElement('link'); css.rel = 'stylesheet'; css.href = h + q;
-          if (i === 4) css.onload = css.onerror = function () { document.documentElement.classList.add('estilo-ok'); };
+          if (i === 5) css.onload = css.onerror = function () { document.documentElement.classList.add('estilo-ok'); };
           document.head.appendChild(css);
         });
-        ['js/config.js', 'js/modulos.js', 'js/regras.js', 'js/modelo-oficio.js', 'js/oficio.js', 'js/planilhas.js', 'js/relatorio.js', 'js/demo-dados.js', 'js/demo-irp.js', 'js/dados.js', 'js/app.js', 'js/consorciados.js', 'js/modelo-irp.js', 'js/irp-docs.js', 'js/irp.js'].reduce(function (ant, arq) {
+        ['js/config.js', 'js/modulos.js', 'js/regras.js', 'js/modelo-oficio.js', 'js/timbre-word.js', 'js/oficio.js', 'js/planilhas.js', 'js/relatorio.js', 'js/demo-dados.js', 'js/demo-irp.js', 'js/dados.js', 'js/app.js', 'js/consorciados.js', 'js/consorcio.js', 'js/modelo-irp.js', 'js/irp-docs.js', 'js/irp.js'].reduce(function (ant, arq) {
           return ant.then(function () {
             return new Promise(function (ok, erro) {
               var s = document.createElement('script'); s.src = arq + q; s.onload = ok; s.onerror = erro; document.body.appendChild(s);
@@ -123,8 +123,8 @@
   <header class="topo-publico">
     <div class="limite-publico">
       <div class="marca">
-        <img src="icon-192.png" alt="" width="40" height="40">
-        <div><strong>CIMOP</strong><span>Consórcio Intermunicipal Multifinalitário dos Municípios do Oeste Potiguar</span></div>
+        <img src="icon-192.png" alt="" width="40" height="40" id="publico-logo">
+        <div><strong id="publico-sigla">Gestão de Consórcio</strong><span id="publico-nome"></span></div>
       </div>
     </div>
   </header>
@@ -152,7 +152,7 @@
         <h1 id="modulos-ola">Bem-vindo!</h1>
         <p id="modulos-consorcio"></p>
       </div>
-      <img src="logo-cimop.jpg" alt="CIMOP" class="faixa-modulos-logo" width="150" height="111">
+      <img src="" alt="" class="faixa-modulos-logo" id="faixa-modulos-logo" width="150" height="111" hidden>
     </section>
     <div class="secao-modulos">
       <h2>Módulos</h2>
@@ -181,7 +181,7 @@
     <header class="topo">
       <button type="button" class="btn-menu" id="btn-menu" aria-label="Abrir menu" aria-expanded="false">☰</button>
       <div class="topo-orgao">
-        <span class="topo-orgao-nome" id="topo-orgao-nome">CIMOP · Gestão de Consórcio</span>
+        <span class="topo-orgao-nome" id="topo-orgao-nome">Gestão de Consórcio</span>
         <span class="topo-orgao-perfil" id="topo-orgao-perfil"></span>
       </div>
       <button type="button" class="btn btn-primario" id="btn-topo-novo">+ Novo pedido</button>

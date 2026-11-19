@@ -65,7 +65,8 @@ window.DEMO_IRP = function (obterBase, h) {
     async publicoIrp(id) {
       await h.carregar(); prep(); const i = irp(id); if (!i || !['aberta', 'encerrada', 'consolidada'].includes(i.situacao)) return null;
       return { id: i.id, numero: String(i.numero).padStart(3, '0') + '/' + i.ano, processo: i.processo, objeto: i.objeto, prazo_fim: i.prazo_fim, aberta: aberta(i), situacao: aberta(i) ? 'aberta' : i.situacao === 'aberta' ? 'encerrada' : i.situacao,
-        itens: base.irp_itens.filter((t) => t.irp_id === id).sort((a, b) => a.numero - b.numero), cimop: { nome: base.config.orgao_nome, sigla: base.config.sigla, email: 'cimop.rn@gmail.com' } };
+        itens: base.irp_itens.filter((t) => t.irp_id === id).sort((a, b) => a.numero - b.numero), cimop: { nome: base.config.orgao_nome, sigla: base.config.sigla, email: base.config.email_institucional || 'cimop.rn@gmail.com',
+          norma: base.config.resolucao_srp, declaracoes: base.config.modelo_irp_declaracoes || null } };
     },
     async publicoIrpEnte(id, cnpj) {
       const o = base.orgaos.find((x) => String(x.cnpj || '').replace(/\D/g, '') === cnpj); if (!o) return { orgao: null };

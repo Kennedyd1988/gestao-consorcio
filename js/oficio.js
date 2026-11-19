@@ -1,4 +1,4 @@
-/* Geração do ofício em Word (.docx) no padrão do Ofício nº 105/2026 – CIMOP.
+/* Geração do ofício em Word (.docx) no padrão do Ofício nº 105/2026 (timbre do consórcio por js/timbre-word.js).
    Usa o timbre, rodapé e estilos originais (modelo-oficio.js) e monta o corpo do texto. */
 (function () {
   const R = window.REGRAS;
@@ -148,6 +148,7 @@
     for (const [p, c] of Object.entries(M.partes)) zip.file(p, p === 'word/_rels/document.xml.rels' ? c.replace(/<Relationship Id="rId6"[^>]*\/>/, '') : c);
     zip.file('word/media/image1.jpeg', M.imagem, { base64: true });
     zip.file('word/document.xml', M.docInicio + corpo(dados) + M.docFim);
+    if (window.TIMBRE_WORD) await window.TIMBRE_WORD.aplicar(zip, dados.config || {});
     return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
   }
 

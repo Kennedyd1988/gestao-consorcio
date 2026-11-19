@@ -1,9 +1,10 @@
 /* =====================================================================
    SOFT+ Consórcios · Gestão de Consórcio — documentos da IRP
-   - Edital em Word (timbre e estilos do edital IRP nº 002/2026 do CIMOP: js/modelo-irp.js)
+   - Edital em Word (estilos do edital IRP nº 002/2026: js/modelo-irp.js; timbre do consórcio: js/timbre-word.js;
+     texto editável em Consórcio › Normas e modelos)
    - Formulário Padrão em PDF, com o timbre do PRÓPRIO ente (imagem enviada ou padrão em texto)
    - Relatório de consolidação em PDF e mapa consolidado em Excel
-   Textos aprovados em 19/11/2026 (Res. CIMOP 018/2023 alterada pela 001/2026).
+   Textos padrão aprovados em 19/11/2026.
    ===================================================================== */
 (function () {
   'use strict';
@@ -37,58 +38,135 @@
     return x + '</w:tbl>';
   }
 
-  // d = { irp, itens, signatario:{nome,cargo}, cimop:{orgao_nome,sigla,cnpj,endereco,email_institucional,horario,cidade_uf}, link }
+  // ---------------------------------------------------------------- MODELO DO EDITAL (editável em Consórcio › Normas e modelos)
+  // Uma linha em branco separa os parágrafos. "# " = título de seção; "- " = alínea com recuo; {ITENS} = tabela dos itens.
+  // Campos: {CONSORCIO} {SIGLA} {CNPJ} {SEDE} {NORMA} {NORMA_ALTERACAO} {OBJETO} {CONTRATACAO} {DOCUMENTO} {PRAZO_FIM} {DIAS_UTEIS} {LINK} {CONTATO}
+  // O título (IRP nº, processo), o local e a data e a assinatura entram sozinhos.
+  const MODELO_EDITAL = `O {CONSORCIO}, inscrito no CNPJ sob o nº {CNPJ}, com sede {SEDE}, na condição de Órgão Gerenciador, torna público aos órgãos e entidades da Administração Pública que realizará Procedimento Público de Intenção de Registro de Preços (IRP), com fundamento no art. 86 da Lei nº 14.133, de 1º de abril de 2021, e nos arts. 4º, 5º e 8º da {NORMA}{NORMA_ALTERACAO}, para levantar e consolidar as demandas da futura {CONTRATACAO} pelo Sistema de Registro de Preços, nas condições a seguir.
+
+# 1. DO OBJETO
+
+1.1. Constitui objeto desta IRP o levantamento das demandas e dos quantitativos estimados dos órgãos e entidades interessados em integrar, como órgãos participantes, a futura Ata de Registro de Preços para {OBJETO}, conforme especificações a serem detalhadas no Termo de Referência, em conformidade com o Estudo Técnico Preliminar (ETP).
+
+1.2. A IRP tem natureza preparatória e não gera obrigação de contratar. Destina-se a definir a estimativa total de quantidades da contratação e a subsidiar a elaboração do Termo de Referência e do {DOCUMENTO}.
+
+1.3. Este procedimento é dirigido exclusivamente aos órgãos e entidades da Administração Pública. As empresas interessadas em participar da futura licitação deverão aguardar a publicação do respectivo edital.
+
+# 2. DOS PARTICIPANTES
+
+2.1. Podem manifestar interesse, sem limite de número, os órgãos e entidades dos entes da Federação consorciados, não consorciados, cooperados e referendados, nos termos do art. 2º, inciso X, da {NORMA}.
+
+2.2. Os entes consorciados cujas demandas e quantitativos estimados já estejam contemplados no ETP elaborado pelo {SIGLA} participam da Ata de Registro de Preços independentemente de manifestação nesta IRP (art. 8º, § 3º, da {NORMA}). Recomenda-se, ainda assim, que confirmem ou ajustem seus quantitativos pelo formulário.
+
+# 3. DO PRAZO
+
+3.1. As manifestações poderão ser apresentadas até as 23h59 do dia {PRAZO_FIM}, prazo não inferior a {DIAS_UTEIS} dias úteis, contados a partir do primeiro dia útil subsequente à divulgação desta IRP no sítio oficial do {SIGLA} (art. 8º, caput e § 1º, da {NORMA}).
+
+3.2. O prazo poderá ser prorrogado pelo {SIGLA}, mediante justificativa, com divulgação pelos mesmos meios.
+
+3.3. Encerrado o prazo, o formulário eletrônico deixa de receber manifestações, ressalvado o disposto no item 5.4.
+
+# 4. DA MANIFESTAÇÃO DE INTERESSE
+
+4.1. A manifestação será feita pelo Formulário Padrão de IRP, preenchido no endereço {LINK}, com a indicação:
+
+- a) dos itens de interesse, dentre os relacionados no item 6;
+
+- b) da estimativa de consumo de cada item, na unidade de medida indicada; e
+
+- c) do(s) local(is) de entrega ou de execução.
+
+4.2. Concluído o preenchimento, o sistema gera o Formulário Padrão em PDF, já preenchido, que deverá ser assinado pela autoridade competente do órgão ou entidade e anexado no mesmo endereço, dentro do prazo. A manifestação somente será considerada recebida com o anexo do formulário assinado, e o recebimento será confirmado por número de protocolo.
+
+4.3. O formulário assinado integrará o processo administrativo como manifestação formal do órgão ou entidade.
+
+4.4. Compete ao órgão ou entidade garantir que sua demanda esteja formalizada e aprovada pela autoridade competente (art. 5º, II, da {NORMA}), preferencialmente em Documento de Formalização da Demanda (DFD).
+
+4.5. O órgão ou entidade poderá solicitar, de forma justificada, a inclusão de novos itens, informando a especificação, a estimativa de consumo e o local de entrega (art. 5º, III).
+
+# 5. DA ANÁLISE E DA CONSOLIDAÇÃO
+
+5.1. O {SIGLA}, na condição de Órgão Gerenciador, poderá, de forma motivada, aceitar ou recusar (art. 4º, II, da {NORMA}):
+
+- a) quantitativos considerados ínfimos;
+
+- b) a inclusão de novos itens; e
+
+- c) itens de mesma natureza com modificações em suas especificações.
+
+5.2. O {SIGLA} poderá ajustar, de forma motivada, os quantitativos informados, para atender aos requisitos de padronização e racionalização da contratação (art. 4º, IV), comunicando a cada órgão ou entidade os quantitativos aceitos.
+
+5.3. Encerrada a IRP, o {SIGLA} consolidará as estimativas individuais e a estimativa total de consumo, em relatório juntado ao processo administrativo.
+
+5.4. O órgão ou entidade que não se manifestar no prazo poderá solicitar, de forma motivada, sua inclusão como órgão participante, por expediente formal dirigido ao {SIGLA}, contendo os itens pretendidos, os quantitativos estimados, os locais de entrega ou execução e a declaração de concordância com as especificações e condições do procedimento. A inclusão posterior somente será admitida até o encerramento da fase preparatória, sendo vedada após a publicação do edital da licitação ou do aviso de contratação direta (art. 8º, §§ 4º a 7º).
+
+# 6. DOS ITENS
+
+6.1. Os órgãos e entidades interessados poderão manifestar interesse nos seguintes itens:
+
+{ITENS}
+
+# 7. DISPOSIÇÕES FINAIS
+
+7.1. Os quantitativos informados são estimativos e poderão ser consolidados, ajustados ou redefinidos após a conclusão da IRP.
+
+7.2. Os órgãos participantes integrarão a Ata de Registro de Preços e celebrarão diretamente seus contratos, nos termos do edital da licitação, podendo o {SIGLA} emitir atas individualizadas por órgão participante, mantida a unicidade do processo administrativo (art. 4º, § 5º, e art. 9º-A).
+
+7.3. Antes de iniciar licitação própria para objeto semelhante, os órgãos e entidades devem consultar as IRPs em andamento e deliberar sobre a conveniência de sua participação (art. 9º).
+
+7.4. Dúvidas e pedidos de esclarecimento poderão ser encaminhados ao {SIGLA} {CONTATO}.`;
+
+  // Declarações do Formulário Padrão (uma por linha). Campos: {SIGLA} {NORMA} {DFD}
+  const MODELO_DECLARACOES = [
+    '5.1. conhece e adere ao Estudo Técnico Preliminar (ETP) elaborado pelo {SIGLA} para este objeto, que atende às suas necessidades e serve de base técnica para a futura contratação;',
+    '5.2. os quantitativos informados foram estimados com base em seu planejamento e estão formalizados em Documento de Formalização da Demanda {DFD}aprovado pela autoridade competente (art. 5º, II, da {NORMA});',
+    '5.3. autoriza o {SIGLA}, na condição de Órgão Gerenciador, a incluir esta manifestação na consolidação da IRP e a aceitar, ajustar ou recusar, de forma motivada, os quantitativos e itens informados (art. 4º, II e IV);',
+    '5.4. tem ciência de que esta manifestação não gera obrigação de contratar e de que, formada a Ata de Registro de Preços, celebrará diretamente seus contratos, nos termos do edital (art. 9º-A);',
+    '5.5. assume as obrigações de órgão participante previstas no art. 5º da {NORMA}, inclusive a de prestar informações sobre suas contratações, e reconhece a competência do Órgão Gerenciador para aplicar, garantidos o contraditório e a ampla defesa, as penalidades decorrentes do descumprimento do pactuado na Ata em relação à sua demanda registrada (art. 4º, XV); e',
+    '5.6. as informações prestadas neste formulário são verdadeiras.',
+  ].join('\n');
+  const CAMPOS_EDITAL = {
+    CONSORCIO: 'nome e sigla do consórcio, em maiúsculas', SIGLA: 'sigla do consórcio', CNPJ: 'CNPJ do consórcio', SEDE: 'endereço da sede, com "na" ou "em" na frente',
+    NORMA: 'regulamento do SRP (Normas)', NORMA_ALTERACAO: '", com as alterações da …" quando houver norma que altera', OBJETO: 'objeto da IRP',
+    CONTRATACAO: '"licitação" ou "contratação direta"', DOCUMENTO: '"edital da licitação" ou "aviso de contratação direta"', PRAZO_FIM: 'data final das manifestações',
+    DIAS_UTEIS: '"8 (oito)" ou "3 (três)"', LINK: 'endereço do formulário', CONTATO: 'e-mail e sede para dúvidas', ITENS: 'tabela dos itens (sozinho na linha)',
+  };
+  const preencher = (t, v) => String(t || '').replace(/\{([A-Z_]+)\}/g, (m, k) => (v[k] != null ? v[k] : m));
+  function camposDoEdital(d) {
+    const { irp } = d; const c = d.cimop || {};
+    const sigla = c.sigla || 'Consórcio';
+    const end = c.endereco ? c.endereco + (c.cidade_uf && !c.endereco.includes(c.cidade_uf) ? ', ' + c.cidade_uf : '') + (c.cep && !c.endereco.includes(c.cep) ? ', CEP ' + c.cep : '') : '';
+    const sede = end || c.cidade_uf || '';
+    const prep = end && /^(rua|pra[çc]a|avenida|av\.|travessa|rodovia|estrada|alameda|vila)(\s|$)/i.test(end) ? 'na ' : 'em ';
+    return {
+      CONSORCIO: [(c.orgao_nome || '').toUpperCase(), sigla.toUpperCase()].filter(Boolean).join(' – '), SIGLA: sigla, CNPJ: cnpjF(c.cnpj) || '___', SEDE: sede ? prep + sede : '___',
+      NORMA: c.resolucao_srp || 'regulamento do Sistema de Registro de Preços do consórcio', NORMA_ALTERACAO: c.resolucao_alteracao ? ', com as alterações da ' + c.resolucao_alteracao : '',
+      OBJETO: String(irp.objeto || '').replace(/[.\s]+$/, ''), CONTRATACAO: irp.contratacao_direta ? 'contratação direta' : 'licitação',
+      DOCUMENTO: irp.contratacao_direta ? 'aviso de contratação direta' : 'edital da licitação', PRAZO_FIM: dataBR(irp.prazo_fim) || '___/___/______',
+      DIAS_UTEIS: irp.contratacao_direta ? '3 (três)' : '8 (oito)', LINK: d.link || '___',
+      CONTATO: [c.email_institucional ? 'pelo e-mail ' + c.email_institucional : null, end ? 'na sede, ' + end + (c.horario ? ', ' + c.horario : '') : null].filter(Boolean).join(' ou ') || 'pelos canais oficiais do consórcio',
+    };
+  }
+  // d = { irp, itens, signatario:{nome,cargo}, cimop: configurações do consórcio, link }
   function corpoEdital(d) {
-    const { irp, cimop } = d;
-    const dias = irp.contratacao_direta ? '3 (três)' : '8 (oito)';
-    const nome = (cimop.orgao_nome || 'Consórcio Intermunicipal Multifinalitário dos Municípios do Oeste Potiguar').toUpperCase() + ' – ' + (cimop.sigla || 'CIMOP').toUpperCase();
-    const sede = cimop.endereco || 'Rua Manoel de Freitas, nº 43, Sala 5, Centro, Portalegre/RN, CEP 59810-000';
-    const p = (t) => par(t);
+    const { irp } = d; const c = d.cimop || {};
+    const v = camposDoEdital(d);
     let x = '';
     x += par({ t: 'PROCEDIMENTO PÚBLICO DE INTENÇÃO DE REGISTRO DE PREÇOS', b: true }, { jc: 'center', antes: 120, depois: 60 });
     x += par({ t: 'IRP Nº ' + numeroIrp(irp), b: true }, { jc: 'center', depois: 60 });
     x += par('Processo Administrativo nº ' + irp.processo, { jc: 'center', depois: 280 });
-    x += p(`O ${nome}, inscrito no CNPJ sob o nº ${cnpjF(cimop.cnpj) || '15.185.079/0001-40'}, com sede na ${sede}, na condição de Órgão Gerenciador, torna público aos órgãos e entidades da Administração Pública que realizará Procedimento Público de Intenção de Registro de Preços (IRP), com fundamento no art. 86 da Lei nº 14.133, de 1º de abril de 2021, e nos arts. 4º, 5º e 8º da Resolução nº 018/2023 – CIMOP, com as alterações da Resolução nº 001/2026 – CIMOP, para levantar e consolidar as demandas da futura ${irp.contratacao_direta ? 'contratação direta' : 'licitação'} pelo Sistema de Registro de Preços, nas condições a seguir.`);
-    x += titulo('1. DO OBJETO');
-    x += p(`1.1. Constitui objeto desta IRP o levantamento das demandas e dos quantitativos estimados dos órgãos e entidades interessados em integrar, como órgãos participantes, a futura Ata de Registro de Preços para ${irp.objeto.replace(/[.\s]+$/, '')}, conforme especificações a serem detalhadas no Termo de Referência, em conformidade com o Estudo Técnico Preliminar (ETP).`);
-    x += p(`1.2. A IRP tem natureza preparatória e não gera obrigação de contratar. Destina-se a definir a estimativa total de quantidades da contratação e a subsidiar a elaboração do Termo de Referência e do ${irp.contratacao_direta ? 'aviso de contratação direta' : 'edital da licitação'}.`);
-    x += p('1.3. Este procedimento é dirigido exclusivamente aos órgãos e entidades da Administração Pública. As empresas interessadas em participar da futura licitação deverão aguardar a publicação do respectivo edital.');
-    x += titulo('2. DOS PARTICIPANTES');
-    x += p('2.1. Podem manifestar interesse, sem limite de número, os órgãos e entidades dos entes da Federação consorciados, não consorciados, cooperados e referendados, nos termos do art. 2º, inciso X, da Resolução nº 018/2023 – CIMOP.');
-    x += p('2.2. Os entes consorciados cujas demandas e quantitativos estimados já estejam contemplados no ETP elaborado pelo CIMOP participam da Ata de Registro de Preços independentemente de manifestação nesta IRP (art. 8º, § 3º, da Resolução nº 018/2023 – CIMOP). Recomenda-se, ainda assim, que confirmem ou ajustem seus quantitativos pelo formulário.');
-    x += titulo('3. DO PRAZO');
-    x += p(`3.1. As manifestações poderão ser apresentadas até as 23h59 do dia ${dataBR(irp.prazo_fim) || '___/___/______'}, prazo não inferior a ${dias} dias úteis, contados a partir do primeiro dia útil subsequente à divulgação desta IRP no sítio oficial do CIMOP (art. 8º, caput e § 1º, da Resolução nº 018/2023 – CIMOP).`);
-    x += p('3.2. O prazo poderá ser prorrogado pelo CIMOP, mediante justificativa, com divulgação pelos mesmos meios.');
-    x += p('3.3. Encerrado o prazo, o formulário eletrônico deixa de receber manifestações, ressalvado o disposto no item 5.4.');
-    x += titulo('4. DA MANIFESTAÇÃO DE INTERESSE');
-    x += p(`4.1. A manifestação será feita pelo Formulário Padrão de IRP, preenchido no endereço ${d.link}, com a indicação:`);
-    x += par('a) dos itens de interesse, dentre os relacionados no item 6;', { recuo: 567 });
-    x += par('b) da estimativa de consumo de cada item, na unidade de medida indicada; e', { recuo: 567 });
-    x += par('c) do(s) local(is) de entrega ou de execução.', { recuo: 567 });
-    x += p('4.2. Concluído o preenchimento, o sistema gera o Formulário Padrão em PDF, já preenchido, que deverá ser assinado pela autoridade competente do órgão ou entidade e anexado no mesmo endereço, dentro do prazo. A manifestação somente será considerada recebida com o anexo do formulário assinado, e o recebimento será confirmado por número de protocolo.');
-    x += p('4.3. O formulário assinado integrará o processo administrativo como manifestação formal do órgão ou entidade.');
-    x += p('4.4. Compete ao órgão ou entidade garantir que sua demanda esteja formalizada e aprovada pela autoridade competente (art. 5º, II, da Resolução nº 018/2023 – CIMOP), preferencialmente em Documento de Formalização da Demanda (DFD).');
-    x += p('4.5. O órgão ou entidade poderá solicitar, de forma justificada, a inclusão de novos itens, informando a especificação, a estimativa de consumo e o local de entrega (art. 5º, III).');
-    x += titulo('5. DA ANÁLISE E DA CONSOLIDAÇÃO');
-    x += p('5.1. O CIMOP, na condição de Órgão Gerenciador, poderá, de forma motivada, aceitar ou recusar (art. 4º, II, da Resolução nº 018/2023 – CIMOP):');
-    x += par('a) quantitativos considerados ínfimos;', { recuo: 567 });
-    x += par('b) a inclusão de novos itens; e', { recuo: 567 });
-    x += par('c) itens de mesma natureza com modificações em suas especificações.', { recuo: 567 });
-    x += p('5.2. O CIMOP poderá ajustar, de forma motivada, os quantitativos informados, para atender aos requisitos de padronização e racionalização da contratação (art. 4º, IV), comunicando a cada órgão ou entidade os quantitativos aceitos.');
-    x += p('5.3. Encerrada a IRP, o CIMOP consolidará as estimativas individuais e a estimativa total de consumo, em relatório juntado ao processo administrativo.');
-    x += p('5.4. O órgão ou entidade que não se manifestar no prazo poderá solicitar, de forma motivada, sua inclusão como órgão participante, por expediente formal dirigido ao CIMOP, contendo os itens pretendidos, os quantitativos estimados, os locais de entrega ou execução e a declaração de concordância com as especificações e condições do procedimento. A inclusão posterior somente será admitida até o encerramento da fase preparatória, sendo vedada após a publicação do edital da licitação ou do aviso de contratação direta (art. 8º, §§ 4º a 7º).');
-    x += titulo('6. DOS ITENS');
-    x += p('6.1. Os órgãos e entidades interessados poderão manifestar interesse nos seguintes itens:');
-    x += tabelaWord(['ITEM', 'DESCRIÇÃO TÉCNICA', 'UNIDADE'], d.itens.map((t) => [String(t.numero), t.descricao, t.unidade]), [850, 6254, 1400]);
-    x += titulo('7. DISPOSIÇÕES FINAIS');
-    x += p('7.1. Os quantitativos informados são estimativos e poderão ser consolidados, ajustados ou redefinidos após a conclusão da IRP.');
-    x += p('7.2. Os órgãos participantes integrarão a Ata de Registro de Preços e celebrarão diretamente seus contratos, nos termos do edital da licitação, podendo o CIMOP emitir atas individualizadas por órgão participante, mantida a unicidade do processo administrativo (art. 4º, § 5º, e art. 9º-A).');
-    x += p('7.3. Antes de iniciar licitação própria para objeto semelhante, os órgãos e entidades devem consultar as IRPs em andamento e deliberar sobre a conveniência de sua participação (art. 9º).');
-    const contato = ['pelo e-mail ' + (cimop.email_institucional || 'cimop.rn@gmail.com'), 'ou na sede, ' + sede + (cimop.horario ? ', ' + cimop.horario : '')].join(', ');
-    x += p(`7.4. Dúvidas e pedidos de esclarecimento poderão ser encaminhados ao CIMOP ${contato}.`);
-    x += par(`${cimop.cidade_uf || 'Portalegre/RN'}, ${extenso(irp.data_documento || irp.data_divulgacao || hojeISO())}.`, { jc: 'right', antes: 360, depois: 720 });
+    const blocos = String(c.modelo_irp_edital || MODELO_EDITAL).replace(/\r/g, '').split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+    for (const b of blocos) {
+      if (b === '{ITENS}') { x += tabelaWord(['ITEM', 'DESCRIÇÃO TÉCNICA', 'UNIDADE'], d.itens.map((t) => [String(t.numero), t.descricao, t.unidade]), [850, 6254, 1400]); continue; }
+      const t = preencher(b.replace(/\n/g, ' '), v);
+      if (/^#\s+/.test(t)) x += titulo(t.replace(/^#\s+/, ''));
+      else if (/^-\s+/.test(t)) x += par(t.replace(/^-\s+/, ''), { recuo: 567 });
+      else x += par(t);
+    }
+    x += par(`${c.cidade_uf || '________'}, ${extenso(irp.data_documento || irp.data_divulgacao || hojeISO())}.`, { jc: 'right', antes: 360, depois: 720 });
     x += par({ t: (d.signatario.nome || '').toUpperCase(), b: true }, { jc: 'center', depois: 0 });
-    x += par(d.signatario.cargo + ' do ' + (cimop.sigla || 'CIMOP'), { jc: 'center' });
+    const cargo = d.signatario.cargo || '';
+    x += par(cargo + (c.sigla && !cargo.toUpperCase().includes(c.sigla.toUpperCase()) ? ' do ' + c.sigla : ''), { jc: 'center' });
     return x;
   }
   async function gerarEdital(d) {
@@ -99,6 +177,7 @@
     for (const [p, c] of Object.entries(M.partes)) zip.file(p, c);
     for (const [p, c] of Object.entries(M.binarios)) zip.file(p, c, { base64: true });
     zip.file('word/document.xml', M.docInicio + corpoEdital(d) + M.docFim);
+    if (window.TIMBRE_WORD) await window.TIMBRE_WORD.aplicar(zip, d.cimop || {});
     return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
   }
   const nomeEdital = (irp) => `IRP ${numeroIrp(irp).replace('/', '-')} - Edital.docx`;
@@ -131,6 +210,8 @@
     const doc = new jsPDF({ unit: 'mm', format: 'a4' });
     const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 18;
     const e = d.ente;
+    const cons = d.cimop || {}; const sig = cons.sigla || '';
+    const vDecl = { SIGLA: sig || 'Órgão Gerenciador', NORMA: cons.norma || cons.resolucao_srp || 'regulamento do Sistema de Registro de Preços do consórcio', DFD: d.f.dfd_numero ? 'nº ' + d.f.dfd_numero + ', ' : '' };
     const [cab, rod, bras] = await Promise.all([imagemPng(e.cabecalho), imagemPng(e.rodape), e.cabecalho ? null : imagemPng(e.brasao)]);
     const cidade = [e.municipio, e.uf].filter(Boolean).join('/');
     // Cabeçalho: imagem do timbre ou padrão em texto (nunca sai sem)
@@ -165,7 +246,7 @@
         if (l2) doc.text(l2, W / 2, H - 14.5, { align: 'center' });
       }
       doc.setFontSize(6.5); doc.setTextColor(140, 150, 162);
-      doc.text(`Formulário gerado pelo sistema Gestão de Consórcio (CIMOP) em ${new Date().toLocaleString('pt-BR')} · Protocolo ${d.protocolo || '—'} · Assinar e anexar no mesmo endereço até ${dataBR(d.irp.prazo_fim)}.`, W / 2, H - 6, { align: 'center', maxWidth: W - 2 * M });
+      doc.text(`Formulário gerado pelo sistema Gestão de Consórcio${sig ? ' (' + sig + ')' : ''} em ${new Date().toLocaleString('pt-BR')} · Protocolo ${d.protocolo || '—'} · Assinar e anexar no mesmo endereço até ${dataBR(d.irp.prazo_fim)}.`, W / 2, H - 6, { align: 'center', maxWidth: W - 2 * M });
       doc.text(`${pag}/${total}`, W - M, H - 6, { align: 'right' });
     };
     const limiteY = () => H - (rod ? 34 : 28);
@@ -193,7 +274,7 @@
 
     secao('1. IDENTIFICAÇÃO DO ÓRGÃO OU ENTIDADE');
     campoLinha('Órgão/Entidade:', e.nome); campoLinha('CNPJ:', cnpjF(e.cnpj));
-    campoLinha('Situação em relação ao CIMOP:', VINCULO[e.vinculo] || 'A confirmar pelo CIMOP');
+    campoLinha('Situação em relação ao ' + (sig || 'consórcio') + ':', VINCULO[e.vinculo] || 'A confirmar pelo ' + (sig || 'consórcio'));
     campoLinha('Endereço:', [e.endereco, e.bairro, cidade, e.cep ? 'CEP ' + e.cep : null].filter(Boolean).join(', '));
     campoLinha('Telefone/WhatsApp:', [e.telefone, e.whatsapp && e.whatsapp !== e.telefone ? e.whatsapp : null].filter(Boolean).join(' / '));
     campoLinha('E-mail:', e.email);
@@ -215,7 +296,7 @@
     secao('3. LOCAL DE ENTREGA OU DE EXECUÇÃO');
     texto(d.f.local_entrega, { sz: 9.5 });
 
-    secao('4. INCLUSÃO DE NOVOS ITENS (art. 5º, III, da Resolução nº 018/2023 – CIMOP)');
+    secao('4. INCLUSÃO DE NOVOS ITENS');
     if (d.novos && d.novos.length) {
       espaco(18);
       doc.autoTable({ startY: y, margin: { left: M, right: M, top: topo, bottom: H - limiteY() }, theme: 'grid',
@@ -227,15 +308,8 @@
 
     secao('5. DECLARAÇÕES');
     texto('O órgão ou entidade declara que:', { sz: 9.5 });
-    const dfd = d.f.dfd_numero ? 'nº ' + d.f.dfd_numero + ', ' : '';
-    [
-      '5.1. conhece e adere ao Estudo Técnico Preliminar (ETP) elaborado pelo CIMOP para este objeto, que atende às suas necessidades e serve de base técnica para a futura contratação;',
-      `5.2. os quantitativos informados foram estimados com base em seu planejamento e estão formalizados em Documento de Formalização da Demanda ${dfd}aprovado pela autoridade competente (art. 5º, II);`,
-      '5.3. autoriza o CIMOP, na condição de Órgão Gerenciador, a incluir esta manifestação na consolidação da IRP e a aceitar, ajustar ou recusar, de forma motivada, os quantitativos e itens informados (art. 4º, II e IV);',
-      '5.4. tem ciência de que esta manifestação não gera obrigação de contratar e de que, formada a Ata de Registro de Preços, celebrará diretamente seus contratos, nos termos do edital (art. 9º-A);',
-      '5.5. assume as obrigações de órgão participante previstas no art. 5º da Resolução nº 018/2023 – CIMOP, inclusive a de prestar informações sobre suas contratações, e reconhece a competência do Órgão Gerenciador para aplicar, garantidos o contraditório e a ampla defesa, as penalidades decorrentes do descumprimento do pactuado na Ata em relação à sua demanda registrada (art. 4º, XV); e',
-      '5.6. as informações prestadas neste formulário são verdadeiras.',
-    ].forEach((t) => texto(t, { sz: 9.5, recuo: 4 }));
+    String(cons.declaracoes || MODELO_DECLARACOES).replace(/\r/g, '').split('\n').map((l) => l.trim()).filter(Boolean)
+      .forEach((t) => texto(preencher(t, vDecl), { sz: 9.5, recuo: 4 }));
 
     espaco(42); y += 6;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...TEXTO);
@@ -251,7 +325,7 @@
   }
   const nomeFormulario = (irp, ente) => `IRP ${numeroIrp(irp).replace('/', '-')} - Formulário - ${String(ente.nome || '').replace(/[\\/:*?"<>|]/g, '')}.pdf`;
 
-  // ================================================================ CONSOLIDAÇÃO (PDF, timbre do CIMOP)
+  // ================================================================ CONSOLIDAÇÃO (PDF, logotipo do consórcio)
   // d = { irp, itens, respostas:[{orgao, origem, protocolo, resultado, situacao, itens:[{item, qtd_informada, qtd_aceita, decisao, motivo, novo_descricao, novo_unidade, justificativa}]}],
   //       semResposta:[orgao], prorrogacoes, signatario, cimop }
   async function gerarConsolidacao(d) {
@@ -259,12 +333,13 @@
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'mm', format: 'a4' });
     const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 15;
-    const logo = await imagemPng(d.logo || 'logo-cimop.jpg');
+    const logo = d.logo ? await imagemPng(d.logo) : null;
     const cabecalho = () => {
-      if (logo) { const h = 12, w = h * logo.w / logo.h; doc.addImage(logo.data, 'PNG', M, 7, w, h); }
+      let x = M;
+      if (logo) { const h = 12, w = Math.min(20, h * logo.w / logo.h); doc.addImage(logo.data, 'PNG', M, 7, w, h * Math.min(1, 20 / (h * logo.w / logo.h))); x = M + w + 3; }
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(...NAVY);
-      doc.text((d.cimop.sigla || 'CIMOP') + ' · Relatório de consolidação da IRP nº ' + numeroIrp(d.irp), M + 22, 12);
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...SUAVE); doc.text('Processo Administrativo nº ' + d.irp.processo, M + 22, 16.5);
+      doc.text((d.cimop.sigla || 'Consórcio') + ' · Relatório de consolidação da IRP nº ' + numeroIrp(d.irp), x, 12);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...SUAVE); doc.text('Processo Administrativo nº ' + d.irp.processo, x, 16.5);
       doc.setDrawColor(10, 150, 104); doc.setLineWidth(0.6); doc.line(M, 21, W - M, 21);
     };
     let y = 30;
@@ -329,10 +404,10 @@
 
     espaco(40); y += 10;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...TEXTO);
-    doc.text(`${d.cimop.cidade_uf || 'Portalegre/RN'}, ${extenso(hojeISO())}.`, W - M, y, { align: 'right' }); y += 22;
+    doc.text(`${d.cimop.cidade_uf || '________'}, ${extenso(hojeISO())}.`, W - M, y, { align: 'right' }); y += 22;
     doc.line(W / 2 - 45, y, W / 2 + 45, y); y += 5;
     doc.setFont('helvetica', 'bold'); doc.text(String(d.signatario.nome || '').toUpperCase(), W / 2, y, { align: 'center' }); y += 4.6;
-    doc.setFont('helvetica', 'normal'); doc.text((d.signatario.cargo || '') + ' do ' + (d.cimop.sigla || 'CIMOP'), W / 2, y, { align: 'center' });
+    doc.setFont('helvetica', 'normal'); const cg = d.signatario.cargo || ''; doc.text(cg + (d.cimop.sigla && !cg.toUpperCase().includes(d.cimop.sigla.toUpperCase()) ? ' do ' + d.cimop.sigla : ''), W / 2, y, { align: 'center' });
     const total = doc.internal.getNumberOfPages();
     for (let i = 1; i <= total; i++) { doc.setPage(i); doc.setFontSize(7); doc.setTextColor(...SUAVE); doc.text(`Gerado pelo sistema Gestão de Consórcio em ${new Date().toLocaleString('pt-BR')} · ${i}/${total}`, W / 2, H - 7, { align: 'center' }); }
     return doc.output('blob');
@@ -362,5 +437,6 @@
     return new Blob([X.write(wb, { type: 'array', bookType: 'xlsx' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   }
 
-  window.IRP_DOCS = { gerarEdital, nomeEdital, gerarFormulario, nomeFormulario, gerarConsolidacao, mapaExcel, numeroIrp, dataBR, extenso, VINCULO, cnpjF, num };
+  window.IRP_DOCS = { gerarEdital, nomeEdital, gerarFormulario, nomeFormulario, gerarConsolidacao, mapaExcel, numeroIrp, dataBR, extenso, VINCULO, cnpjF, num,
+    MODELO_EDITAL, MODELO_DECLARACOES, CAMPOS_EDITAL, preencher };
 })();

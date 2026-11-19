@@ -1,5 +1,5 @@
 // =====================================================================
-// SOFT+ GOV · Gestão de Consórcio (CIMOP) — módulo de adesões às Atas de Registro de Preços
+// SOFT+ GOV · Gestão de Consórcio — núcleo do painel e módulo de adesões às Atas de Registro de Preços
 // Núcleo do painel no padrão SOFT+ (mesmas peças do painel do Portal PNTP).
 // =====================================================================
 (function () {
@@ -272,6 +272,28 @@
   // Cadastro de Consorciados: base própria. Mudou o cadastro, as Adesões recarregam ao abrir.
   async function recarregarCadastro() { estado.cad = await D.carregarCadastro(); }
   function cadastroMudou() { estado.cad = null; estado.base = null; }
+  // Identidade do consórcio (nome, sigla, logotipo): vem do módulo Consórcio. Vale para todas as telas.
+  function ident() {
+    const c = (estado.cad && estado.cad.config) || (estado.base && estado.base.config) || {};
+    const i = estado.ident || {};
+    return { orgao_nome: c.orgao_nome || i.orgao_nome || '', sigla: c.sigla || i.sigla || '', cidade_uf: c.cidade_uf || i.cidade_uf || '',
+      email: c.email_institucional || i.email || '', telefone: c.telefone || i.telefone || '',
+      logo: c.logo_url ? D.urlCadastro(c.logo_url) : i.logo_url || null };
+  }
+  const sigla = () => ident().sigla || 'consórcio';
+  // Mostra nome e logotipo do consórcio nas faixas da tela principal e das telas públicas
+  function aplicarIdentidade() {
+    const i = ident();
+    const logo = $('faixa-modulos-logo');
+    if (logo) { if (i.logo) { logo.src = i.logo; logo.alt = 'Logotipo do ' + (i.sigla || 'consórcio'); logo.hidden = false; } else logo.hidden = true; }
+    if ($('publico-sigla')) { $('publico-sigla').textContent = i.sigla || 'Gestão de Consórcio'; $('publico-nome').textContent = i.orgao_nome || ''; }
+    if ($('publico-logo') && i.logo) $('publico-logo').src = i.logo;
+  }
+  async function carregarIdentidade() {
+    if (estado.ident) return;
+    try { estado.ident = (D.identidade && await D.identidade()) || {}; } catch (e) { estado.ident = {}; }
+    aplicarIdentidade();
+  }
 
   // ---------------------------------------------------------------- login
   for (const b of document.querySelectorAll('.btn-ver-senha')) b.addEventListener('click', () => {
@@ -333,10 +355,15 @@
       ['IRP', [['irps', 'Intenções de Registro de Preços']]],
     ],
     consorciados: [
-      ['Cadastro', [['entes', 'Entes e consorciados'], ['pessoas', 'Pessoas do CIMOP'], ['cimop', 'Dados do CIMOP']]],
+      ['Cadastro', [['entes', 'Entes e consorciados']]],
+    ],
+    consorcio: [
+      ['Consórcio', [['consorcio', 'Dados do consórcio'], ['timbre', 'Brasão e timbre'], ['pessoas', 'Pessoas do consórcio']]],
+      ['Documentos', [['normas', 'Normas e modelos'], ['documentos', 'Documentos do consórcio']]],
+      ['Site', [['site', 'Integração com o site']]],
     ],
     sistema: [
-      ['Sistema', [['usuarios', 'Usuários e acessos'], ['integracao', 'Integração com o site']]],
+      ['Sistema', [['usuarios', 'Usuários e acessos']]],
     ],
   };
   function montarMenu(mod) {
@@ -407,15 +434,14 @@
       try { if (!estado.cad) await recarregarCadastro(); if (!estado.irp) await window.IRP.recarregarIrp(); }
       catch (e) { if (!e.semScript) { mostrarTela('tela-modulos'); toast(e.message, true); return; } estado.irp = null; }
     }
-    if (mod.id === 'consorciados' && !estado.cad) {
+    if ((mod.id === 'consorciados' || mod.id === 'consorcio') && !estado.cad) {
       mostrarTela('tela-carregando'); $('carregando-texto').textContent = 'Carregando o cadastro dos entes…';
       try { await recarregarCadastro(); } catch (e) { mostrarTela('tela-modulos'); toast(e.message, true); return; }
     }
     if (estado.modulo !== mod.id) {
       estado.modulo = mod.id;
       montarMenu(mod); atualizarContadores();
-      const sigla = (estado.base && estado.base.config.sigla) || 'CIMOP';
-      $('topo-orgao-nome').textContent = sigla + ' · ' + mod.nome;
+      $('topo-orgao-nome').textContent = (ident().sigla ? ident().sigla + ' · ' : '') + mod.nome;
       $('topo-orgao-perfil').textContent = mod.id === 'sistema' ? 'Administrador do sistema' : 'Seu perfil neste módulo: ' + NOME_PERFIL[perfilEm(mod.id)];
       $('btn-topo-novo').hidden = !(mod.id === 'adesoes' && podeEditar());
       $('menu-busca').value = '';
@@ -437,6 +463,7 @@
     mostrarTela('tela-carregando'); $('carregando-texto').textContent = 'Abrindo o sistema…';
     if (estado.usuario.troca_senha && D.modo !== 'demo') { mostrarTela('tela-login'); $('form-login').hidden = true; $('form-nova-senha').hidden = false; return; }
     estado.acessos = await D.acessos(estado.usuario);
+    await carregarIdentidade();
     estado.modulo = null; estado.logado = true;
     $('topo-usuario').textContent = estado.usuario.nome;
     $('topo-usuario-modulos').textContent = estado.usuario.nome;
@@ -452,7 +479,7 @@
 
   async function iniciar() {
     for (const s of document.querySelectorAll('.versao-app')) s.textContent = window.VERSAO_APP || '—';
-    if (ehPublica()) { mostrarTela('tela-publica'); telaPublica(); }
+    if (ehPublica()) { carregarIdentidade().then(() => { if (ehPublica()) telaPublica(); }); mostrarTela('tela-publica'); }
     try {
       estado.usuario = await D.sessao();
       if (ehPublica()) {
@@ -488,9 +515,9 @@
     mostrarTela('tela-modulos');
     document.title = 'SOFT+ Consórcios · Gestão de Consórcio';
     const nome = (estado.usuario.nome || '').split(' ')[0];
-    const cfg = (estado.base && estado.base.config) || {};
     $('modulos-ola').textContent = nome ? 'Olá, ' + nome + '!' : 'Bem-vindo!';
-    $('modulos-consorcio').textContent = cfg.orgao_nome || 'Consórcio Intermunicipal Multifinalitário dos Municípios do Oeste Potiguar';
+    $('modulos-consorcio').textContent = ident().orgao_nome;
+    aplicarIdentidade();
     const lib = modulosLiberados();
     const grade = $('grade-modulos');
     if (!lib.length) {
@@ -512,7 +539,7 @@
           pend ? el('span', { class: 'cartao-modulo-resumo' }, pend.resumo) : null));
     }));
     // Carrega os dados do módulo de adesões em segundo plano para mostrar as pendências (e abrir o módulo sem espera).
-    if (perfilEm('consorciados') && !estado.cad && !estado.carregandoCad) {
+    if ((perfilEm('consorciados') || perfilEm('consorcio')) && !estado.cad && !estado.carregandoCad) {
       estado.carregandoCad = true;
       recarregarCadastro().then(() => { if (!$('tela-modulos').hidden) telaModulos(); }).catch(() => {}).finally(() => { estado.carregandoCad = false; });
     }
@@ -727,7 +754,7 @@
         const dados = { pedido, orgao: org, linhas: res, config: b.config };
         await baixar('PRÉVIA - ' + O.nomeArquivo(dados), await O.gerarDocx(dados)); return;
       }
-      if (!marcarErro(fNum, num ? (b.pedidos.some((p) => p.numero_oficio === num && p.id !== r.substitui) ? 'Esse número já foi usado.' : '') : 'Informe o número do ofício do CIMOP.')) return;
+      if (!marcarErro(fNum, num ? (b.pedidos.some((p) => p.numero_oficio === num && p.id !== r.substitui) ? 'Esse número já foi usado.' : '') : 'Informe o número do ofício do ' + sigla() + '.')) return;
       const res = R.analisar(b, org, pedido.data_oficio, ls, r.substitui);
       const neg = res.filter((x) => x.decisao === 'negado').length;
       const ok = await confirmar(r.substitui ? 'Gravar a correção' : 'Registrar o pedido', el('div', null,
@@ -763,7 +790,7 @@
           campo('np-orgao', 'Órgão ou entidade', selOrg, 'O limite de 50% é por CNPJ. Fundo, autarquia ou Câmara com CNPJ próprio é outro órgão.', true), ficha,
           el('button', { type: 'button', class: 'btn btn-claro', onclick: () => formOrgao({}, (o) => { r.orgao_id = o.id; rotear(); }) }, podeEditarCadastro() ? '+ Incluir ente no Cadastro' : '+ Incluir ente (fica pendente no Cadastro)')),
         el('section', { class: 'cartao' }, el('h2', null, 'Ofício'),
-          el('div', { class: 'grade-campos' }, el('div', { class: 'campo' }, el('label', { for: 'np-num' }, 'Nº do ofício do CIMOP', el('span', { class: 'obrigatorio' }, ' *')), (fNum.id = 'np-num', fNum), avisoNum, el('span', { class: 'erro-campo', id: 'np-num-erro' })),
+          el('div', { class: 'grade-campos' }, el('div', { class: 'campo' }, el('label', { for: 'np-num' }, 'Nº do ofício do ' + sigla(), el('span', { class: 'obrigatorio' }, ' *')), (fNum.id = 'np-num', fNum), avisoNum, el('span', { class: 'erro-campo', id: 'np-num-erro' })),
             campo('np-data', 'Data do ofício', fData, null, true)),
           el('div', { class: 'grade-campos' }, campo('np-sol', 'Ofício do solicitante', fSol), campo('np-datasol', 'Data do pedido', fDataSol)),
           campo('np-fin', 'A adesão destina-se…', fFin, 'Completa a frase "A adesão destina-se …" do ofício. Opcional.'),
@@ -956,7 +983,7 @@
     const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar');
     const d = abrirDialogo('Editar dados do ofício', el('div', null,
       el('p', { class: 'msg msg-info' }, 'Itens e quantidades não mudam aqui (eles definem os saldos). Para mudar quantidades, cancele o pedido e lance outro.'),
-      el('div', { class: 'grade-campos' }, campo('ep-num', 'Nº do ofício do CIMOP', f.num, null, true), campo('ep-data', 'Data do ofício', f.data)),
+      el('div', { class: 'grade-campos' }, campo('ep-num', 'Nº do ofício do ' + sigla(), f.num, null, true), campo('ep-data', 'Data do ofício', f.data)),
       el('div', { class: 'grade-campos' }, campo('ep-sol', 'Ofício do solicitante', f.sol), campo('ep-datasol', 'Data do pedido', f.datasol)),
       campo('ep-fin', 'A adesão destina-se…', f.fin), campo('ep-anexos', 'Texto dos anexos (em branco = sem anexos)', f.anexos)),
       [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), btn]);
@@ -1321,7 +1348,7 @@
     const vu = i.preco_unitario != null ? Number(i.preco_unitario) : null;
     const exportar = () => {
       const linhas = [['ARP ' + a.numero + ' · Item ' + i.numero + ' – ' + i.descricao], ['Registrado', reg, 'Limite por órgão (50%)', lim, 'Limite total (dobro)', reg * 2, 'Aderido', cons.tot], [],
-        ['Órgão', 'CNPJ', 'UF', 'Ofícios do CIMOP', 'Quantidade', '% do limite de 50%', 'Saldo do órgão', 'Valor (R$)']];
+        ['Órgão', 'CNPJ', 'UF', 'Ofícios do ' + sigla(), 'Quantidade', '% do limite de 50%', 'Saldo do órgão', 'Valor (R$)']];
       grupos.forEach((g) => linhas.push([g.o.nome, O.formatarCnpj(g.o.cnpj || ''), g.o.uf || '', g.peds.map((l) => (l.p.numero_oficio || 's/n') + (l.p.data_oficio ? ' (' + R.dataBR(l.p.data_oficio) + ')' : '')).join('; '),
         g.qtd, Math.round(g.qtd / lim * 1000) / 10, Math.max(0, lim - g.qtd), cons.valorPorOrg[g.o.id] != null ? Math.round(cons.valorPorOrg[g.o.id] * 100) / 100 : null]));
       const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(linhas), 'Aderentes');
@@ -1338,7 +1365,7 @@
         el('div', null, el('span', { class: 'rotulo' }, 'Saldo para novas adesões'), el('strong', { class: 'num-grande' }, R.num(Math.max(0, reg * 2 - cons.tot), 2)), el('small', null, 'limite total: ' + R.num(reg * 2, 2) + ' (§ 5º)'))),
       el('section', { class: 'cartao' }, el('h2', null, 'Órgãos que aderiram'),
         grupos.length ? el('div', { class: 'tabela-caixa', 'data-sem-paginas': '1' }, el('table', { class: 'tabela' },
-          el('thead', null, el('tr', null, ['Órgão', 'Ofícios do CIMOP', 'Quantidade', 'Uso dos 50%', 'Saldo do órgão', 'Valor (R$)'].map((t, k) => el('th', { scope: 'col', class: k === 2 || k === 4 || k === 5 ? 'num' : null }, t)))),
+          el('thead', null, el('tr', null, ['Órgão', 'Ofícios do ' + sigla(), 'Quantidade', 'Uso dos 50%', 'Saldo do órgão', 'Valor (R$)'].map((t, k) => el('th', { scope: 'col', class: k === 2 || k === 4 || k === 5 ? 'num' : null }, t)))),
           el('tbody', null, grupos.map((g) => el('tr', { class: g.qtd > lim + 1e-9 ? 'lin-negado' : null },
             el('td', null, el('strong', null, g.o.nome), el('span', { class: 'sub-linha' }, (g.o.cnpj ? O.formatarCnpj(g.o.cnpj) : 'sem CNPJ') + ' · ' + g.o.esfera)),
             el('td', null, el('ul', { class: 'm-0 lista-oficios' }, g.peds.map((l) => el('li', null, el('a', { href: '#pedido-' + l.p.id }, 'Of. ' + (l.p.numero_oficio || 's/n')),
@@ -1414,7 +1441,7 @@
       const agora = new Date();
       const nomeAta = typeof opc.escopo === 'string' && b.atasPorId[opc.escopo] ? 'ARP ' + b.atasPorId[opc.escopo].numero : null;
       return {
-        sigla: cf.sigla, orgao: cf.orgao_nome, regulamento: cf.resolucao_srp + (cf.resolucao_alteracao ? ', alterado pela ' + cf.resolucao_alteracao : ''),
+        sigla: cf.sigla, orgao: cf.orgao_nome, logo: ident().logo, regulamento: cf.resolucao_srp + (cf.resolucao_alteracao ? ', alterado pela ' + cf.resolucao_alteracao : ''),
         presidente: cf.presidente_nome, presidenteCargo: cf.presidente_cargo, usuario: estado.usuario.nome,
         dataBR: R.dataBR(hoje()), geradoEm: agora.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
         escopo: nomeAta || (opc.escopo === 'todas' ? 'Todas as atas cadastradas' : 'Atas vigentes'),
@@ -1453,7 +1480,7 @@
       return { arp: a.numero, contratado: a.detentora || '—', adesoes: ls.length, orgaos: new Set(ls.map((l) => l.orgaoId)).size, valor: ls.reduce((s, l) => s + l.valor, 0) }; })
       .sort((x, y) => x.arp.slice(-4).localeCompare(y.arp.slice(-4)) || x.arp.localeCompare(y.arp));
     const nomeAta = b.atasPorId[opc.escopo] ? 'ARP ' + b.atasPorId[opc.escopo].numero : null;
-    return { sigla: cf.sigla, usuario: estado.usuario.nome, dataBR: R.dataBR(hoje()), escopo: nomeAta || (opc.escopo === 'todas' ? 'Todas as atas' : 'Atas vigentes'),
+    return { sigla: cf.sigla, logo: ident().logo, usuario: estado.usuario.nome, dataBR: R.dataBR(hoje()), escopo: nomeAta || (opc.escopo === 'todas' ? 'Todas as atas' : 'Atas vigentes'),
       geradoEm: new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
       linhas, porAta, semData: linhas.filter((l) => l.data === 'não informada').length, total: linhas.reduce((s, l) => s + l.valor, 0), qtdOrgaos: new Set(linhas.map((l) => l.orgaoId)).size, moeda: R.moeda };
   }
@@ -1477,13 +1504,13 @@
         if (f.tipo.value === 'resumido') {
           const r = dadosResumido({ escopo: f.escopo.value });
           if (!r.linhas.length) { toast('Nenhuma adesão nesse filtro.', true); return; }
-          await baixar('Relação de Adesões - ' + (b.config.sigla || 'CIMOP') + ' - ' + hoje().split('-').reverse().join('-') + '.pdf', await window.RELATORIO.gerarResumido(r), 'application/pdf');
+          await baixar('Relação de Adesões - ' + (b.config.sigla || 'Consórcio') + ' - ' + hoje().split('-').reverse().join('-') + '.pdf', await window.RELATORIO.gerarResumido(r), 'application/pdf');
           toast('Relatório gerado.'); return;
         }
         const d = dadosRelatorio({ escopo: f.escopo.value, detalhe: f.detalhe.checked, todosItens: f.todos.checked, negados: f.negados.checked });
         if (!d.atas.length) { toast('Nenhuma ata nesse filtro.', true); return; }
         const blob = await window.RELATORIO.gerar(d);
-        const nome = 'Relatório de Adesões - ' + (b.config.sigla || 'CIMOP') + ' - ' + hoje().split('-').reverse().join('-') + '.pdf';
+        const nome = 'Relatório de Adesões - ' + (b.config.sigla || 'Consórcio') + ' - ' + hoje().split('-').reverse().join('-') + '.pdf';
         await baixar(nome, blob, 'application/pdf');
         toast('Relatório gerado.');
       } catch (e) { console.error(e); toast(e.message, true); } finally { ocupado(btn); }
@@ -1599,7 +1626,7 @@
     } }, 'Buscar agora');
     const topo = cabecalho('Atualizações do PNCP', null, btn); topo.querySelector('h1').after(ultima);
     rc(c, topo,
-      el('p', { class: 'msg msg-info' }, 'Toda madrugada o sistema consulta as atas do CIMOP no PNCP, lê os termos aditivos novos e mostra aqui o que mudou: ata nova, prorrogação (com ou sem renovação dos quantitativos), novo preço por reequilíbrio e cancelamento. Nada muda nos saldos até você conferir e clicar em Confirmar.'),
+      el('p', { class: 'msg msg-info' }, 'Toda madrugada o sistema consulta as atas do ' + sigla() + ' no PNCP, lê os termos aditivos novos e mostra aqui o que mudou: ata nova, prorrogação (com ou sem renovação dos quantitativos), novo preço por reequilíbrio e cancelamento. Nada muda nos saldos até você conferir e clicar em Confirmar.'),
       pend.length ? pend.map(cartaoPncp) : el('p', { class: 'vazio' }, 'Nenhuma atualização aguardando conferência.'),
       secaoConferenciaPncp(),
       feitas.length ? el('section', { class: 'cartao' }, el('h2', null, 'Histórico'),
@@ -1920,7 +1947,7 @@
         rc(c, el('section', { class: 'cartao cartao-sucesso' },
           el('div', { class: 'sucesso-icone', 'aria-hidden': 'true' }, '✓'), el('h1', null, 'Solicitação enviada'),
           el('p', null, 'Guarde o número do protocolo:'), el('p', { class: 'protocolo' }, protocolo),
-          el('p', { class: 'sub' }, 'O CIMOP vai analisar o pedido e responder por ofício no e-mail informado. Acompanhe pelo protocolo e pelo CNPJ ' + O.formatarCnpj(cnpjEnviado) + '.'),
+          el('p', { class: 'sub' }, 'O ' + sigla() + ' vai analisar o pedido e responder por ofício no e-mail informado. Acompanhe pelo protocolo e pelo CNPJ ' + O.formatarCnpj(cnpjEnviado) + '.'),
           el('div', { class: 'linha-botoes' }, el('a', { class: 'btn btn-claro', href: '#consultar' }, 'Consultar andamento'), el('button', { type: 'button', class: 'btn btn-primario', onclick: () => telaPublica() }, 'Fazer outra solicitação'))));
         window.scrollTo(0, 0);
       } catch (e) { rc(msgEnvio, el('p', { class: 'msg msg-erro' }, e.message)); ocupado(btnEnviar); }
@@ -1929,13 +1956,13 @@
     const passo = (n, titulo, ...filhos) => el('section', { class: 'cartao passo-publico' }, el('h2', null, el('span', { class: 'passo-num' }, n), titulo), filhos);
     rc(c,
       el('div', { class: 'intro-publica' }, el('h1', null, 'Solicitar adesão a Ata de Registro de Preços'),
-        el('p', { class: 'sub' }, 'Para órgãos e entidades que desejam aderir, como não participantes, às Atas de Registro de Preços do CIMOP (art. 86, § 2º, da Lei nº 14.133/2021 e art. 28 da Resolução CIMOP nº 018/2023).'),
+        el('p', { class: 'sub' }, 'Para órgãos e entidades que desejam aderir, como não participantes, às Atas de Registro de Preços do ' + sigla() + ' (art. 86, § 2º, da Lei nº 14.133/2021 e regulamento do Sistema de Registro de Preços do consórcio).'),
         el('p', null, el('a', { class: 'link', href: '#consultar' }, 'Já enviou? Consulte o andamento pelo protocolo'),
-          estado.usuario ? [' · ', el('a', { class: 'link', href: '#solicitacoes' }, 'Voltar ao painel do CIMOP')] : null)),
+          estado.usuario ? [' · ', el('a', { class: 'link', href: '#solicitacoes' }, 'Voltar ao painel')] : null)),
       passo(1, 'Órgão solicitante', campo('sp-cnpj', 'CNPJ do órgão ou entidade', fCnpj, 'Cada CNPJ tem limite próprio de 50% do registrado por item.', true), fichaOrg, blocoDados),
       passo(2, 'Ata e quantidades', atas.length
         ? [campo('sp-ata', 'Ata de registro de preços', selAta, 'Só aparecem atas vigentes. Pode juntar itens de mais de uma ata: escolha outra e continue.'), areaItens, resumo]
-        : el('p', { class: 'msg msg-info' }, 'No momento não há ata de registro de preços vigente disponível para adesão. Em caso de dúvida, fale com o CIMOP pelo e-mail cimop.rn@gmail.com.')),
+        : el('p', { class: 'msg msg-info' }, 'No momento não há ata de registro de preços vigente disponível para adesão.' + (ident().email ? ' Em caso de dúvida, fale com o ' + sigla() + ' pelo e-mail ' + ident().email + '.' : ''))),
       passo(3, 'Ofício e documentos',
         el('div', { class: 'grade-campos' }, campo('sp-of', 'Nº do ofício de solicitação', fOf, null, true), campo('sp-ofdata', 'Data do ofício', fOfData)),
         campo('sp-fin', 'Finalidade da adesão', fFin, 'Para que serão usados os itens. Entra no ofício de resposta.'),
@@ -1960,9 +1987,9 @@
         const r = await D.consultarSolicitacao(fProt.value, cnpj);
         rc(saida, !r ? el('p', { class: 'msg msg-erro' }, 'Não encontramos esse protocolo para este CNPJ.') : el('div', { class: 'msg msg-' + (r.situacao === 'recusada' ? 'erro' : r.situacao === 'atendida' ? 'ok' : 'info') },
           el('p', null, el('strong', null, r.protocolo), ' · ', SIT_SOL[r.situacao][0]),
-          r.situacao === 'atendida' ? el('p', null, 'Respondido pelo Ofício nº ' + (r.oficio || '—') + ' do CIMOP, enviado ao e-mail informado.') : null,
+          r.situacao === 'atendida' ? el('p', null, 'Respondido pelo Ofício nº ' + (r.oficio || '—') + ' do ' + sigla() + ', enviado ao e-mail informado.') : null,
           r.situacao === 'recusada' ? el('p', null, 'Motivo: ' + (r.motivo_recusa || '—')) : null,
-          r.situacao === 'recebida' || r.situacao === 'em_analise' ? el('p', null, 'Seu pedido está na fila de análise do CIMOP.') : null));
+          r.situacao === 'recebida' || r.situacao === 'em_analise' ? el('p', null, 'Seu pedido está na fila de análise do ' + sigla() + '.') : null));
       } catch (e) { rc(saida, el('p', { class: 'msg msg-erro' }, e.message)); } finally { ocupado(btn); }
     });
     rc(c, el('div', { class: 'intro-publica' }, el('h1', null, 'Consultar solicitação'), el('p', null, el('a', { class: 'link', href: '#solicitar' }, '‹ Voltar ao formulário'))),
@@ -2041,7 +2068,7 @@
         const ja = await D.importacaoExistente(hash).catch(() => null);
         const novasAtas = d.atas.filter((a) => !b.atas.some((x) => x.numero === a.numero)).length;
         const grupos = D.agruparAdesoes(d.adesoes);
-        // Adesões que já estão no sistema (mesmo ofício do CIMOP e mesmo órgão) são ignoradas
+        // Adesões que já estão no sistema (mesmo ofício do consórcio e mesmo órgão) são ignoradas
         const existe = (g) => D.grupoJaExiste(b, g);
         const repetidas = grupos.filter(existe).length;
         const bloqueado = !!ja || d.erros.length > 0;
@@ -2088,21 +2115,25 @@
   TELAS.configuracoes = (c) => {
     if (!eAdmin()) { rc(c, cabecalho('Acesso não permitido')); return; }
     const cf = estado.base.config;
-    const f = { orgao_nome: txt(cf.orgao_nome), sigla: txt(cf.sigla, { maxlength: 20 }), cidade_uf: txt(cf.cidade_uf), presidente_nome: txt(cf.presidente_nome, cf._presidenteCadastro ? { readonly: true } : null), presidente_cargo: txt(cf.presidente_cargo),
-      resolucao_srp: txt(cf.resolucao_srp), resolucao_alteracao: txt(cf.resolucao_alteracao), texto_anexos: area(cf.texto_anexos, { rows: 3 }) };
+    const f = { presidente_nome: txt(cf.presidente_nome, cf._presidenteCadastro ? { readonly: true } : null), presidente_cargo: txt(cf.presidente_cargo),
+      texto_anexos: area(cf.texto_anexos, { rows: 3 }) };
     const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar');
     btn.addEventListener('click', async () => {
-      for (const k of ['sigla', 'cidade_uf', 'presidente_nome', 'presidente_cargo', 'resolucao_srp']) if (!marcarErro(f[k], f[k].value.trim() ? '' : 'Obrigatório.')) return;
+      for (const k of ['presidente_nome', 'presidente_cargo']) if (!marcarErro(f[k], f[k].value.trim() ? '' : 'Obrigatório.')) return;
       ocupado(btn, 'Salvando…');
       try { await D.salvarConfig(Object.fromEntries(Object.entries(f).map(([k, i]) => [k, i.value.trim()]))); await recarregar(); toast('Configurações salvas.'); } catch (e) { toast(e.message, true); } finally { ocupado(btn); }
     });
-    rc(c, cabecalho('Configurações do ofício', 'Dados fixos que entram em todos os ofícios. O timbre e o rodapé são os do Ofício nº 105/2026.'),
-      el('section', { class: 'cartao' }, el('h2', null, 'Assinatura e local'),
-        el('div', { class: 'grade-campos' }, campo('cf-pres', 'Presidente', f.presidente_nome, cf._presidenteCadastro ? 'Vem do Cadastro de Consorciados › Pessoas do CIMOP (o Presidente ativo). Para trocar, altere lá.' : null, true), campo('cf-cargo', 'Cargo na assinatura', f.presidente_cargo, null, true)),
-        el('div', { class: 'grade-campos' }, campo('cf-cidade', 'Local da data', f.cidade_uf, null, true), campo('cf-sigla', 'Sigla no número do ofício', f.sigla, 'OFÍCIO Nº 105/2026 – CIMOP', true)),
-        campo('cf-nome', 'Nome do consórcio', f.orgao_nome)),
-      el('section', { class: 'cartao' }, el('h2', null, 'Fundamentação'),
-        el('div', { class: 'grade-campos' }, campo('cf-res', 'Regulamento do SRP', f.resolucao_srp, 'Citado nos arts. 28 e 29.', true), campo('cf-res2', 'Resolução que altera', f.resolucao_alteracao)),
+    const podeConsorcio = perfilEm('consorcio') || eAdminSistema();
+    rc(c, cabecalho('Configurações do ofício', 'Dados fixos que entram em todos os ofícios.'),
+      el('section', { class: 'cartao' }, el('h2', null, 'Do módulo Consórcio'),
+        el('dl', { class: 'dados' }, el('dt', null, 'Consórcio'), el('dd', null, cf.orgao_nome || '—'), el('dt', null, 'Sigla no número do ofício'), el('dd', null, cf.sigla ? 'OFÍCIO Nº 105/2026 – ' + cf.sigla : '—'),
+          el('dt', null, 'Local da data'), el('dd', null, cf.cidade_uf || '—'), el('dt', null, 'Regulamento do SRP'), el('dd', null, cf.resolucao_srp || '—'),
+          el('dt', null, 'Norma que altera'), el('dd', null, cf.resolucao_alteracao || '—'), el('dt', null, 'Timbre'), el('dd', null, cf.usar_timbre_modelo ? 'O do modelo do ofício' : cf.timbre_cabecalho_url ? 'Imagem enviada em Brasão e timbre' : 'Padrão com os textos do consórcio')),
+        el('p', { class: 'ajuda' }, 'Nome, sigla, sede, normas e timbre ficam no módulo Consórcio' + (podeConsorcio ? '' : ' (peça a quem administra o módulo)') + '.'),
+        podeConsorcio ? el('p', null, el('a', { class: 'link', href: '#consorcio' }, 'Abrir Dados do consórcio'), ' · ', el('a', { class: 'link', href: '#normas' }, 'Normas'), ' · ', el('a', { class: 'link', href: '#timbre' }, 'Timbre')) : null),
+      el('section', { class: 'cartao' }, el('h2', null, 'Assinatura'),
+        el('div', { class: 'grade-campos' }, campo('cf-pres', 'Presidente', f.presidente_nome, cf._presidenteCadastro ? 'Vem de Consórcio › Pessoas do consórcio (o Presidente ativo). Para trocar, altere lá.' : null, true), campo('cf-cargo', 'Cargo na assinatura', f.presidente_cargo, null, true))),
+      el('section', { class: 'cartao' }, el('h2', null, 'Anexos'),
         campo('cf-anexos', 'Texto padrão dos anexos', f.texto_anexos, '{pregao} vira "Pregão Eletrônico nº 008/2025". Pode ser ajustado em cada pedido.')),
       el('div', { class: 'barra-salvar' }, btn),
       secaoEmailDocumentos());
@@ -2112,16 +2143,16 @@
   function secaoEmailDocumentos() {
     const cf = estado.base.config;
     let docs = (cf.documentos || []).map((d) => ({ ...d }));
-    if (!docs.length) docs = [{ titulo: cf.resolucao_srp || 'Resolução CIMOP nº 018/2023', url: '' }, { titulo: cf.resolucao_alteracao || 'Resolução CIMOP nº 001/2026', url: '' }];
+    if (!docs.length) docs = [{ titulo: cf.resolucao_srp || 'Regulamento do SRP', url: '' }, cf.resolucao_alteracao ? { titulo: cf.resolucao_alteracao, url: '' } : null].filter(Boolean);
     const caixaDocs = el('div', { class: 'lista-docs' });
     const desenharDocs = () => rc(caixaDocs, docs.map((d, k) => {
-      const t = txt(d.titulo, { placeholder: 'Resolução CIMOP nº 018/2023', 'aria-label': 'Título do documento ' + (k + 1) });
+      const t = txt(d.titulo, { placeholder: 'Resolução nº 001/2023', 'aria-label': 'Título do documento ' + (k + 1) });
       const u = txt(d.url, { type: 'url', placeholder: 'https://… (portal da transparência, Google Drive, PNCP…)', 'aria-label': 'Link do documento ' + (k + 1) });
       t.addEventListener('input', () => (d.titulo = t.value)); u.addEventListener('input', () => (d.url = u.value));
       return el('div', { class: 'linha-doc' }, t, u, el('button', { type: 'button', class: 'btn btn-claro btn-p', 'aria-label': 'Remover documento', onclick: () => { docs.splice(k, 1); desenharDocs(); } }, 'Remover'));
     }), el('button', { type: 'button', class: 'link', onclick: () => { docs.push({ titulo: '', url: '' }); desenharDocs(); } }, '+ Documento'));
     desenharDocs();
-    const f = { resposta: txt(cf.email_resposta || '', { type: 'email', placeholder: 'licitacao@cimop.rn.gov.br' }), copia: txt(cf.email_copia || ''),
+    const f = { resposta: txt(cf.email_resposta || '', { type: 'email', placeholder: 'licitacao@consorcio.gov.br' }), copia: txt(cf.email_copia || ''),
       assunto: txt(cf.email_assunto || ''), corpo: area(cf.email_corpo || '', { rows: 12 }) };
     const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar e-mail e documentos');
     btn.addEventListener('click', async () => {
@@ -2225,6 +2256,6 @@
   // Núcleo compartilhado com os arquivos dos outros módulos (js/consorciados.js, …)
   window.NUCLEO = { el, rc, $, estado, D, O, M, toast, msg, marcarErro, campo, txt, area, sel, abrirDialogo, confirmar, abas, tabela, cabecalho, paginarTudo,
     baixar, ocupado, consultarReceita, formatarTelefone, mascaraTelefone, telefoneValido, tituloPt, normalizar, hoje, diasAte, UFS, XLSX_T,
-    perfilEm, podeEditarCadastro, eAdminSistema, formOrgao, recarregarCadastro, cadastroMudou, rotear: () => rotear(), TELAS, PENDENCIAS };
+    perfilEm, podeEditarCadastro, eAdminSistema, formOrgao, ident, sigla, aplicarIdentidade, recarregarCadastro, cadastroMudou, rotear: () => rotear(), TELAS, PENDENCIAS };
   window.ADESOES = { iniciar };
 })();

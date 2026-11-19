@@ -1,7 +1,7 @@
 /* =====================================================================
    SOFT+ Consórcios · Gestão de Consórcio
    Módulo IRP — Procedimento Público de Intenção de Registro de Preços
-   (art. 86 da Lei nº 14.133/2021; Resolução CIMOP nº 018/2023, alterada pela nº 001/2026)
+   (art. 86 da Lei nº 14.133/2021 e regulamento do SRP do consórcio, em Consórcio › Normas)
    Painel: lista, ficha em abas (dados, itens, divulgação, manifestações e análise, ETP, inclusão posterior,
    mapa e consolidação, envio à Ata). Público: formulário #manifestar-<id>, sem login.
    Usa o núcleo (window.NUCLEO), o Cadastro (window.CADASTRO) e os documentos (window.IRP_DOCS).
@@ -39,6 +39,9 @@
   // ---------------------------------------------------------------- dados
   const B = () => estado.irp;
   const C = () => estado.cad;
+  const SG = () => N.sigla();
+  // Como o regulamento do SRP é citado (Consórcio › Normas)
+  const normaTexto = () => { const c = (C() && C().config) || {}; return c.resolucao_srp ? c.resolucao_srp + (c.resolucao_alteracao ? ', alterada pela ' + c.resolucao_alteracao : '') : 'regulamento do SRP do consórcio'; };
   const irpPorId = (id) => B().irps.find((x) => x.id === id);
   const itensDe = (id) => B().itens.filter((t) => t.irp_id === id).sort((a, b) => a.numero - b.numero);
   const orgao = (id) => (C().orgaos.find((o) => o.id === id) || { id, nome: '(ente não encontrado)' });
@@ -98,7 +101,7 @@
       paginarTudo(caixa);
     };
     busca.addEventListener('input', filtrar); fSit.addEventListener('change', filtrar);
-    rc(c, cabecalho('Intenção de Registro de Preços', 'Procedimento público de IRP (art. 86 da Lei nº 14.133/2021 e Resolução nº 018/2023 – CIMOP, alterada pela nº 001/2026).',
+    rc(c, cabecalho('Intenção de Registro de Preços', 'Procedimento público de IRP (art. 86 da Lei nº 14.133/2021 e ' + normaTexto() + ').',
       admin() ? el('button', { type: 'button', class: 'btn btn-claro', onclick: formNumeracao }, 'Numeração') : null,
       pode() ? el('button', { type: 'button', class: 'btn btn-primario', onclick: formNova }, '+ Nova IRP') : null),
     el('div', { class: 'filtros' }, campo('fi-busca', 'Buscar', busca), campo('fi-sit', 'Situação', fSit)), caixa);
@@ -129,7 +132,7 @@
     const d = abrirDialogo('Nova IRP', el('div', null,
       campo('fv-proc', 'Número do processo administrativo', f.processo, 'É a chave que liga a IRP à Ata e aos próximos módulos. Não pode repetir.', true),
       campo('fv-obj', 'Objeto', f.objeto, 'Complete a frase: "…futura Ata de Registro de Preços para [objeto]".', true),
-      campo('fv-sig', 'Quem assina o edital', f.sig, 'Vem das Pessoas do CIMOP (Cadastro).', true),
+      campo('fv-sig', 'Quem assina o edital', f.sig, 'Vem de Consórcio › Pessoas do consórcio.', true),
       el('label', { class: 'checkbox' }, f.direta, ' Contratação direta (prazo mínimo de 3 dias úteis, em vez de 8)'),
       el('p', { class: 'ajuda' }, 'O número da IRP é dado pelo sistema ao criar.')), [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), btn], true);
     btn.addEventListener('click', async () => {
@@ -187,7 +190,7 @@
     if (i.situacao === 'aberta') f.prazo.disabled = true;   // depois de aberta, o prazo só muda por prorrogação registrada
     const avisoPrazo = el('p', { class: 'ajuda' });
     const calcular = async () => {
-      if (!f.div.value) { avisoPrazo.textContent = 'Informe a data de divulgação no site do CIMOP para o sistema calcular o prazo mínimo.'; return; }
+      if (!f.div.value) { avisoPrazo.textContent = 'Informe a data de divulgação no site do ' + SG() + ' para o sistema calcular o prazo mínimo.'; return; }
       try { const m = await D.prazoMinimoIrp(f.div.value, f.direta.checked); f.prazo.min = m;
         avisoPrazo.textContent = `Prazo mínimo: até ${dataBR(m)} (${f.direta.checked ? '3' : '8'} dias úteis contados do 1º dia útil após a divulgação, sem sábados, domingos e feriados).`;
         if (rasc && (!f.prazo.value || f.prazo.value < m)) f.prazo.value = m; } catch (e) { avisoPrazo.textContent = e.message; }
@@ -219,8 +222,8 @@
       el('div', { class: 'grade-campos' }, campo('fd-proc', 'Processo administrativo', f.processo, rasc ? 'Chave de ligação com a Ata e os próximos módulos.' : null, true), campo('fd-sig', 'Quem assina o edital', f.sig, null, true)),
       campo('fd-obj', 'Objeto', f.objeto, null, true),
       el('label', { class: 'checkbox' }, f.direta, ' Contratação direta (prazo mínimo de 3 dias úteis)'),
-      el('div', { class: 'secao-form' }, el('h3', null, 'Prazo (art. 8º da Resolução nº 018/2023)'),
-        el('div', { class: 'grade-campos' }, campo('fd-div', 'Divulgação no site do CIMOP', f.div), campo('fd-prazo', 'Prazo final das manifestações', f.prazo, i.situacao === 'aberta' ? 'Para mudar, use "Prorrogar" na aba Mapa e consolidação.' : null),
+      el('div', { class: 'secao-form' }, el('h3', null, 'Prazo'),
+        el('div', { class: 'grade-campos' }, campo('fd-div', 'Divulgação no site do ' + SG(), f.div), campo('fd-prazo', 'Prazo final das manifestações', f.prazo, i.situacao === 'aberta' ? 'Para mudar, use "Prorrogar" na aba Mapa e consolidação.' : null),
           campo('fd-docdata', 'Data do edital (documento)', f.docData, 'Vazio: usa a data de divulgação.')), avisoPrazo,
         ps.length ? el('ul', { class: 'lista-simples' }, ps.map((p) => el('li', null, `Prorrogada de ${dataBR(p.prazo_anterior)} para ${dataBR(p.prazo_novo)} em ${quando(p.criado_em)}: ${p.motivo}`))) : null),
       el('div', { class: 'secao-form' }, el('h3', null, 'Fase seguinte'),
@@ -287,8 +290,8 @@
   }
   function textoAviso(i, tipo, o) {
     const cf = C().config || {};
-    if (tipo === 'lembrete') return `Lembrete do ${cf.sigla || 'CIMOP'}: o prazo da IRP nº ${nIrp(i)} (${i.objeto}) termina em ${dataBR(i.prazo_fim)}. Para participar da futura Ata de Registro de Preços, preencha o formulário, assine e anexe: ${linkFormulario(i)}`;
-    return `O ${cf.sigla || 'CIMOP'} abriu a Intenção de Registro de Preços nº ${nIrp(i)}, para ${i.objeto}. Os órgãos interessados em participar da futura Ata de Registro de Preços podem se manifestar até ${dataBR(i.prazo_fim)} pelo formulário: ${linkFormulario(i)}`;
+    if (tipo === 'lembrete') return `Lembrete do ${cf.sigla || SG()}: o prazo da IRP nº ${nIrp(i)} (${i.objeto}) termina em ${dataBR(i.prazo_fim)}. Para participar da futura Ata de Registro de Preços, preencha o formulário, assine e anexe: ${linkFormulario(i)}`;
+    return `O ${cf.sigla || SG()} abriu a Intenção de Registro de Preços nº ${nIrp(i)}, para ${i.objeto}. Os órgãos interessados em participar da futura Ata de Registro de Preços podem se manifestar até ${dataBR(i.prazo_fim)} pelo formulário: ${linkFormulario(i)}`;
   }
   function abaDivulgacao(i) {
     const btnEd = el('button', { type: 'button', class: 'btn btn-primario' }, 'Baixar o edital (Word)');
@@ -299,7 +302,7 @@
     const pronta = i.situacao === 'aberta' || i.situacao === 'encerrada';
     return el('div', null,
       el('section', { class: 'cartao' }, el('h3', null, '1. Edital'),
-        el('p', { class: 'ajuda' }, 'Word com o timbre do CIMOP, o texto aprovado e os itens. Junte ao processo e publique no site oficial (a divulgação conta o prazo).'), btnEd),
+        el('p', { class: 'ajuda' }, 'Word com o timbre do ' + SG() + ', o texto do modelo (Consórcio › Normas e modelos) e os itens. Junte ao processo e publique no site oficial (a divulgação conta o prazo).'), btnEd),
       el('section', { class: 'cartao' }, el('h3', null, '2. Formulário para os entes'),
         el('p', { class: 'ajuda' }, 'Cada ente informa itens, quantidades e local de entrega, baixa o PDF já preenchido com o próprio timbre, assina e anexa no mesmo endereço.'),
         el('div', { class: 'link-copiar' }, el('code', null, link), el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: copiar }, 'Copiar link'), el('a', { class: 'btn btn-claro btn-p', href: link, target: '_blank', rel: 'noopener' }, 'Abrir ↗')),
@@ -326,20 +329,20 @@
   function dialogoEmail(i, tipo) {
     const cf = C().config || {};
     const lista = alvos(i, tipo).map((o) => ({ o, d: destinos(o) }));
-    const assunto = txt(tipo === 'lembrete' ? `Lembrete – IRP nº ${nIrp(i)} – ${cf.sigla || 'CIMOP'} – prazo até ${dataBR(i.prazo_fim)}` : `IRP nº ${nIrp(i)} – ${cf.sigla || 'CIMOP'} – Intenção de Registro de Preços`, { maxlength: 200 });
+    const assunto = txt(tipo === 'lembrete' ? `Lembrete – IRP nº ${nIrp(i)} – ${cf.sigla || SG()} – prazo até ${dataBR(i.prazo_fim)}` : `IRP nº ${nIrp(i)} – ${cf.sigla || SG()} – Intenção de Registro de Preços`, { maxlength: 200 });
     const corpo = area(`Prezados(as),
 
 ${textoAviso(i, tipo)}
 
 Procedimento: depois de preencher, o sistema gera o Formulário Padrão em PDF, já com os dados do órgão. Basta assinar e anexar no mesmo endereço. A manifestação só vale com o formulário assinado anexado.
 
-Os entes consorciados cuja demanda já esteja prevista no Estudo Técnico Preliminar participam da Ata independentemente de manifestação (art. 8º, § 3º, da Resolução nº 018/2023 – CIMOP), mas podem confirmar ou ajustar seus quantitativos pelo formulário.
+Os entes consorciados cuja demanda já esteja prevista no Estudo Técnico Preliminar participam da Ata independentemente de manifestação (${normaTexto()}), mas podem confirmar ou ajustar seus quantitativos pelo formulário.
 
-Dúvidas: ${cf.email_institucional || 'cimop.rn@gmail.com'}${cf.telefone ? ' · ' + cf.telefone : ''}.
+Dúvidas: ${[cf.email_institucional, cf.telefone].filter(Boolean).join(' · ') || 'fale com o ' + SG()}.
 
 Atenciosamente,
 ${(pessoa(i.signatario_id) || {}).nome || ''}
-${(pessoa(i.signatario_id) || {}).cargo || ''} do ${cf.sigla || 'CIMOP'}`, { rows: 14 });
+${(pessoa(i.signatario_id) || {}).cargo || ''} do ${cf.sigla || SG()}`, { rows: 14 });
     const marcas = lista.map(({ o, d }) => ({ o, d, cx: el('input', { type: 'checkbox', checked: d.emails.length > 0, disabled: !d.emails.length }) }));
     const semEmail = marcas.filter((m) => !m.d.emails.length).length;
     const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Enviar e-mails');
@@ -437,7 +440,7 @@ ${(pessoa(i.signatario_id) || {}).cargo || ''} do ${cf.sigla || 'CIMOP'}`, { row
         el('dt', null, 'Responsável'), el('dd', null, [r.responsavel_nome, r.responsavel_email, r.responsavel_telefone].filter(Boolean).join(' · ') || '—'),
         el('dt', null, 'Local de entrega'), el('dd', null, r.local_entrega || '—'), r.dfd_numero ? el('dt', null, 'DFD') : null, r.dfd_numero ? el('dd', null, r.dfd_numero) : null,
         r.justificativa ? el('dt', null, 'Motivação') : null, r.justificativa ? el('dd', null, r.justificativa) : null),
-      el('p', { class: 'ajuda' }, 'Art. 4º, II e IV, da Resolução nº 018/2023: o CIMOP pode aceitar ou recusar quantitativos ínfimos, novos itens e itens com especificação modificada, e ajustar quantidades para padronizar e racionalizar. Ajuste e recusa exigem motivo.'),
+      el('p', { class: 'ajuda' }, 'Pelo ' + normaTexto() + ', o ' + SG() + ' pode aceitar ou recusar quantitativos ínfimos, novos itens e itens com especificação modificada, e ajustar quantidades para padronizar e racionalizar. Ajuste e recusa exigem motivo.'),
       tabela(['Item', 'Informado', 'Decisão', 'Aceito', 'Motivo'], campos.map((k) => el('tr', null,
         el('td', null, k.x.item ? el('span', null, el('strong', null, k.x.item.numero + '. '), k.x.item.descricao.slice(0, 90) + (k.x.item.descricao.length > 90 ? '…' : '')) : el('span', null, el('strong', null, 'Novo item: '), k.x.novo_descricao, ' (' + (k.x.novo_unidade || '') + ')', el('span', { class: 'sub-linha' }, 'Justificativa: ' + (k.x.justificativa || '—')))),
         el('td', { class: 'num' }, num(k.x.qtd_informada)), el('td', null, k.dec), el('td', null, k.qtd), el('td', null, k.mot)))),
@@ -463,10 +466,10 @@ Informamos o resultado da análise da manifestação de ${o.nome} na Intenção 
 
 ${linhas}
 ${r.motivo_geral ? '\nObservação: ' + r.motivo_geral + '\n' : ''}
-A análise segue o art. 4º, II e IV, da Resolução nº 018/2023 – CIMOP. As quantidades aceitas serão consolidadas para a futura licitação.
+A análise segue o ${normaTexto()}. As quantidades aceitas serão consolidadas para a futura licitação.
 
 Atenciosamente,
-${cf.sigla || 'CIMOP'}`;
+${cf.sigla || SG()}`;
     const d0 = destinos(o);
     const para = txt([r.responsavel_email, ...d0.emails].filter(Boolean).filter((v, k, a) => a.indexOf(v) === k).join(', '));
     const corpo = area(texto, { rows: 14 });
@@ -510,7 +513,7 @@ ${cf.sigla || 'CIMOP'}`;
       });
     };
     return el('div', null,
-      el('div', { class: 'cabecalho-secao' }, el('p', { class: 'ajuda' }, 'Art. 8º, § 3º, da Resolução nº 018/2023 (redação da nº 001/2026): o consorciado cuja demanda está no ETP participa da Ata sem se manifestar na IRP.'),
+      el('div', { class: 'cabecalho-secao' }, el('p', { class: 'ajuda' }, 'O consorciado cuja demanda está no ETP participa da Ata sem se manifestar na IRP (' + normaTexto() + ').'),
         editavel ? el('button', { type: 'button', class: 'btn btn-primario btn-p', onclick: () => lancar() }, '+ Lançar demanda do ETP') : null),
       i.situacao === 'rascunho' ? el('p', { class: 'msg msg-info' }, 'Disponível depois que a IRP for aberta.') : null,
       etps.length ? tabela(['Ente', ...its.map((t) => 'Item ' + t.numero), ''], etps.map((r) => el('tr', null, el('td', null, el('strong', null, orgao(r.orgao_id).nome)),
@@ -555,7 +558,7 @@ ${cf.sigla || 'CIMOP'}`;
       });
     };
     return el('div', null,
-      el('p', { class: 'ajuda' }, 'Art. 8º, §§ 4º a 7º: quem não se manifestou no prazo pode pedir inclusão, de forma motivada, até a publicação do edital da licitação. O CIMOP admite só se não prejudicar o planejamento e a consolidação.'),
+      el('p', { class: 'ajuda' }, 'Quem não se manifestou no prazo pode pedir inclusão, de forma motivada, até a publicação do edital da licitação. O ' + SG() + ' admite só se não prejudicar o planejamento e a consolidação.'),
       fechadaEdital ? el('p', { class: 'msg msg-falta' }, 'O edital da licitação foi publicado em ' + dataBR(i.edital_licitacao_em) + ': não se admite mais inclusão posterior (art. 8º, § 7º).')
         : aberta(i) ? el('p', { class: 'msg msg-info' }, 'A IRP ainda está no prazo: os entes usam o formulário.')
         : i.situacao === 'consolidada' ? el('p', { class: 'msg msg-info' }, 'A IRP já foi consolidada. Para admitir uma inclusão, a consolidação precisaria ser refeita.') : null,
@@ -578,7 +581,7 @@ ${cf.sigla || 'CIMOP'}`;
     const totalItem = (t) => aceitas.flatMap((r) => r.itens.filter((x) => x.item_id === t.id)).reduce((s, x) => s + Number(x.qtd_aceita || 0), 0);
     const pend = resps.filter((r) => r.situacao === 'recebida').length;
     const ctx = () => ({ irp: i, itens: its, respostas: resps, prorrogacoes: B().prorrogacoes.filter((p) => p.irp_id === i.id),
-      semResposta: entesAcompanhados(i.id).filter((o) => o.vinculo === 'consorciado' && !resps.some((r) => r.orgao_id === o.id)), signatario: pessoa(i.signatario_id) || { nome: '', cargo: '' }, cimop: C().config || {} });
+      semResposta: entesAcompanhados(i.id).filter((o) => o.vinculo === 'consorciado' && !resps.some((r) => r.orgao_id === o.id)), signatario: pessoa(i.signatario_id) || { nome: '', cargo: '' }, cimop: C().config || {}, logo: N.ident().logo });
     const bPdf = el('button', { type: 'button', class: 'btn btn-claro' }, 'Relatório de consolidação (PDF)');
     bPdf.addEventListener('click', async () => { ocupado(bPdf, 'Gerando…'); try { await baixar(`IRP ${nIrp(i).replace('/', '-')} - Relatório de consolidação.pdf`, await DOC.gerarConsolidacao(ctx())); } catch (e) { toast(e.message, true); } finally { ocupado(bPdf); } });
     const bXls = el('button', { type: 'button', class: 'btn btn-claro' }, 'Mapa consolidado (Excel)');
@@ -657,12 +660,12 @@ ${cf.sigla || 'CIMOP'}`;
     rc(c, el('p', { class: 'ajuda' }, 'Carregando…'));
     let irp;
     try { irp = await D.publicoIrp(id); } catch (e) { rc(c, el('p', { class: 'msg msg-erro' }, 'Não foi possível carregar: ' + e.message)); return; }
-    if (!irp) { rc(c, el('div', { class: 'intro-publica' }, el('h1', null, 'IRP não encontrada'), el('p', null, 'Confira o endereço recebido do CIMOP.'))); return; }
+    if (!irp) { rc(c, el('div', { class: 'intro-publica' }, el('h1', null, 'IRP não encontrada'), el('p', null, 'Confira o endereço recebido do ' + SG() + '.'))); return; }
     pub.irp = irp;
     const cab = el('div', { class: 'intro-publica' }, el('h1', null, 'Intenção de Registro de Preços nº ' + irp.numero),
-      el('p', null, el('strong', null, (irp.cimop && irp.cimop.sigla) || 'CIMOP'), ' · Processo ' + irp.processo), el('p', { class: 'objeto-irp' }, irp.objeto),
+      el('p', null, el('strong', null, (irp.cimop && irp.cimop.sigla) || SG()), ' · Processo ' + irp.processo), el('p', { class: 'objeto-irp' }, irp.objeto),
       irp.aberta ? el('p', { class: 'msg msg-info' }, 'Manifestações até as 23h59 de ' + dataBR(irp.prazo_fim) + '. Preencha, baixe o formulário em PDF, assine e anexe aqui. A manifestação só vale com o formulário assinado anexado.')
-        : el('p', { class: 'msg msg-falta' }, 'O prazo desta IRP terminou em ' + dataBR(irp.prazo_fim) + '. Para pedir inclusão posterior, envie expediente formal ao CIMOP' + (irp.cimop && irp.cimop.email ? ' (' + irp.cimop.email + ')' : '') + '. Você ainda pode consultar uma manifestação já enviada.'));
+        : el('p', { class: 'msg msg-falta' }, 'O prazo desta IRP terminou em ' + dataBR(irp.prazo_fim) + '. Para pedir inclusão posterior, envie expediente formal ao ' + SG() + (irp.cimop && irp.cimop.email ? ' (' + irp.cimop.email + ')' : '') + '. Você ainda pode consultar uma manifestação já enviada.'));
     const fCnpj = txt(pub.cnpj ? O.formatarCnpj(pub.cnpj) : '', { inputmode: 'numeric', maxlength: 18, placeholder: '00.000.000/0000-00', autocomplete: 'off' });
     fCnpj.addEventListener('input', () => { const n = soNum(fCnpj.value).slice(0, 14); fCnpj.value = n.length === 14 ? O.formatarCnpj(n) : n; });
     const corpo = el('div');
@@ -698,11 +701,11 @@ ${cf.sigla || 'CIMOP'}`;
     }
     const blocoEnte = o ? el('div', null,
       el('dl', { class: 'dados' }, el('dt', null, 'Órgão/Entidade'), el('dd', null, el('strong', null, o.nome)), el('dt', null, 'CNPJ'), el('dd', null, O.formatarCnpj(o.cnpj)),
-        el('dt', null, 'Situação em relação ao CIMOP'), el('dd', null, VINCULO[o.vinculo] || 'A confirmar pelo CIMOP'), el('dt', null, 'Município/UF'), el('dd', null, [o.municipio, o.uf].filter(Boolean).join('/') || '—')),
-      el('p', { class: 'ajuda' }, 'Dados do cadastro do CIMOP. Os campos em branco abaixo podem ser completados; para corrigir os demais, fale com o CIMOP.'),
+        el('dt', null, 'Situação em relação ao ' + SG()), el('dd', null, VINCULO[o.vinculo] || 'A confirmar pelo ' + SG()), el('dt', null, 'Município/UF'), el('dd', null, [o.municipio, o.uf].filter(Boolean).join('/') || '—')),
+      el('p', { class: 'ajuda' }, 'Dados do cadastro do ' + SG() + '. Os campos em branco abaixo podem ser completados; para corrigir os demais, fale com o ' + SG() + '.'),
       el('div', { class: 'grade-campos' }, campo('pm-end', 'Endereço', fe.endereco), campo('pm-cep', 'CEP', fe.cep)),
       el('div', { class: 'grade-campos' }, campo('pm-tel', 'Telefone', fe.telefone), campo('pm-email', 'E-mail institucional', fe.email)))
-      : el('div', null, el('p', { class: 'msg msg-info' }, 'Este CNPJ ainda não está no cadastro do CIMOP. Preencha os dados: o cadastro será conferido pelo CIMOP.'), avisoRf,
+      : el('div', null, el('p', { class: 'msg msg-info' }, 'Este CNPJ ainda não está no cadastro do ' + SG() + '. Preencha os dados: o cadastro será conferido pelo ' + SG() + '.'), avisoRf,
         campo('pm-nome', 'Nome do órgão ou entidade', fe.nome, 'Como deve sair no formulário.', true),
         el('div', { class: 'grade-campos' }, campo('pm-mun', 'Município', fe.municipio), campo('pm-uf', 'UF', fe.uf, null, true), campo('pm-esf', 'Esfera', fe.esfera)),
         el('div', { class: 'grade-campos' }, campo('pm-end', 'Endereço', fe.endereco), campo('pm-cep', 'CEP', fe.cep)),
@@ -710,7 +713,7 @@ ${cf.sigla || 'CIMOP'}`;
 
     const estadoResp = resp ? el('div', { class: 'msg ' + (resp.situacao === 'preenchida' ? 'msg-falta' : 'msg-ok') },
       resp.situacao === 'preenchida' ? el('span', null, el('strong', null, 'Formulário já preenchido (protocolo ' + resp.protocolo + '), mas o assinado ainda não foi anexado. '), 'Confira abaixo, gere o PDF de novo se mudar algo, e anexe o assinado no passo 4.')
-        : el('span', null, el('strong', null, 'Manifestação recebida em ' + quando(resp.recebida_em) + ' (protocolo ' + resp.protocolo + '). '), resp.situacao === 'analisada' ? 'Já foi analisada pelo CIMOP. ' : 'Aguardando análise do CIMOP. ',
+        : el('span', null, el('strong', null, 'Manifestação recebida em ' + quando(resp.recebida_em) + ' (protocolo ' + resp.protocolo + '). '), resp.situacao === 'analisada' ? 'Já foi analisada pelo ' + SG() + '. ' : 'Aguardando análise do ' + SG() + '. ',
           irp.aberta ? 'Se enviar outra, ela substitui esta.' : ''),
       resp.situacao === 'analisada' ? el('button', { type: 'button', class: 'link', onclick: () => verResultado(resp.protocolo) }, ' Ver o resultado') : null) : null;
 
@@ -764,7 +767,7 @@ ${cf.sigla || 'CIMOP'}`;
           : { nome: dados.nome, cnpj: pub.cnpj, municipio: dados.municipio, uf: dados.uf, endereco: dados.endereco, cep: dados.cep, telefone: dados.telefone, email: dados.email, vinculo: null };
         const its = irp.itens.reduce((m, t) => { m[t.id] = t; return m; }, {});
         const irpDoc = { numero: Number(irp.numero.split('/')[0]), ano: Number(irp.numero.split('/')[1]), processo: irp.processo, objeto: irp.objeto, prazo_fim: irp.prazo_fim };
-        const blob = await DOC.gerarFormulario({ irp: irpDoc, ente, protocolo: res.protocolo,
+        const blob = await DOC.gerarFormulario({ irp: irpDoc, ente, protocolo: res.protocolo, cimop: irp.cimop || {},
           f: { responsavel_nome: dados.responsavel_nome, responsavel_cargo: dados.responsavel_cargo, responsavel_telefone: dados.responsavel_telefone, responsavel_email: dados.responsavel_email,
             autoridade_nome: dados.autoridade_nome, autoridade_cargo: dados.autoridade_cargo, dfd_numero: dados.dfd_numero, local_entrega: dados.local_entrega },
           itens: itens.map((x) => Object.assign({}, its[x.item_id], { qtd: x.qtd })), novos: nvs });
@@ -781,9 +784,9 @@ ${cf.sigla || 'CIMOP'}`;
         Object.keys(etp).length ? el('p', { class: 'msg msg-info' }, 'As quantidades já previstas no ETP para este ente vieram preenchidas. Confirme ou ajuste.') : null,
         el('p', { class: 'ajuda' }, 'Informe a quantidade só dos itens de interesse, na unidade indicada. Deixe em branco os demais.'),
         tabela(['Item', 'Descrição técnica', 'Unidade', 'Quantidade'], qs.map(({ t, q }) => el('tr', null, el('td', { class: 'num' }, t.numero), el('td', { class: 'texto-longo' }, t.descricao), el('td', null, t.unidade), el('td', null, q)))),
-        el('h3', null, 'Inclusão de itens novos (opcional)'), el('p', { class: 'ajuda' }, 'Art. 5º, III, da Resolução nº 018/2023: o pedido precisa de justificativa e será analisado pelo CIMOP.'), caixaNovos),
+        el('h3', null, 'Inclusão de itens novos (opcional)'), el('p', { class: 'ajuda' }, 'O pedido precisa de justificativa e será analisado pelo ' + SG() + '.'), caixaNovos),
       el('section', { class: 'cartao' }, el('h2', null, '3. Entrega, responsável e quem assina'),
-        campo('pm-local', 'Local(is) de entrega ou de execução', f.local, 'Exigido pelo art. 5º, I, "c", da Resolução nº 018/2023.', true),
+        campo('pm-local', 'Local(is) de entrega ou de execução', f.local, 'Obrigatório.', true),
         campo('pm-dfd', 'Documento de Formalização da Demanda (DFD) nº', f.dfd, 'Opcional. Sai na declaração 5.2 do formulário.'),
         el('h3', null, 'Responsável pelas informações'),
         el('div', { class: 'grade-campos' }, campo('pm-rn', 'Nome', f.rnome, null, true), campo('pm-rc', 'Cargo', f.rcargo)),
@@ -805,7 +808,7 @@ ${cf.sigla || 'CIMOP'}`;
       ocupado(b, 'Enviando…');
       try { await D.publicoIrpAnexar(irp.id, protocolo, pub.cnpj, a);
         rc(caixa, el('section', { class: 'cartao' }, el('div', { class: 'msg msg-ok' }, el('h2', null, 'Manifestação recebida'),
-          el('p', null, 'Protocolo ', el('strong', null, protocolo), '. O CIMOP vai analisar os quantitativos e comunicar o resultado ao e-mail do responsável.'),
+          el('p', null, 'Protocolo ', el('strong', null, protocolo), '. O ' + SG() + ' vai analisar os quantitativos e comunicar o resultado ao e-mail do responsável.'),
           el('p', null, 'Guarde o protocolo. Para consultar depois, volte a este endereço e informe o CNPJ.'))));
         caixa.scrollIntoView({ behavior: 'smooth' });
       } catch (e) { toast(e.message, true); ocupado(b); }

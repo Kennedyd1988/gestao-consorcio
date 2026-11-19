@@ -13,12 +13,20 @@
     })), Promise.resolve()).catch((e) => { carregando = null; throw e; });
     return carregando;
   }
+  // Logotipo do consórcio -> PNG com as medidas (para não deformar)
   async function imagem(url) {
+    if (!url) return null;
     try {
-      const b = await (await fetch(url)).blob();
-      return await new Promise((ok) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => ok(null); r.readAsDataURL(b); });
+      const b = await (await fetch(url, { mode: 'cors' })).blob();
+      const src = URL.createObjectURL(b);
+      const img = await new Promise((ok, erro) => { const i = new Image(); i.onload = () => ok(i); i.onerror = erro; i.src = src; });
+      const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+      c.getContext('2d').drawImage(img, 0, 0); URL.revokeObjectURL(src);
+      return { data: c.toDataURL('image/png'), w: img.naturalWidth, h: img.naturalHeight };
     } catch (e) { return null; }
   }
+  // Desenha o logotipo numa caixa (altura h, largura máxima wMax) e devolve a largura usada
+  const desenharLogo = (doc, logo, x, y, h, wMax) => { if (!logo) return 0; let w = h * logo.w / logo.h, hh = h; if (w > wMax) { w = wMax; hh = w * logo.h / logo.w; } doc.addImage(logo.data, 'PNG', x, y + (h - hh) / 2, w, hh); return w; };
 
   // Cores SOFT+ (manual de padrões)
   const NAVY = [16, 42, 72], VERDE = [10, 150, 104], TEXTO = [26, 36, 51], SUAVE = [83, 97, 115], LINHA = [221, 229, 238], TOM = [238, 244, 251];
@@ -29,15 +37,15 @@
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
     const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 14;
-    const logo = await imagem(d.logo || 'logo-cimop.jpg');
+    const logo = await imagem(d.logo);
     let y = 0;
 
     const cabecalhoPagina = () => {
-      if (logo) doc.addImage(logo, 'JPEG', M, 8, 15, 11);
+      const xl = M + (logo ? desenharLogo(doc, logo, M, 8, 11, 18) + 3 : 0);
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(...NAVY);
-      doc.text(d.sigla + ' · Relatório de adesões às Atas de Registro de Preços', M + 18, 13);
+      doc.text(d.sigla + ' · Relatório de adesões às Atas de Registro de Preços', xl, 13);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...SUAVE);
-      doc.text('Situação em ' + d.dataBR, M + 18, 17.5);
+      doc.text('Situação em ' + d.dataBR, xl, 17.5);
       doc.setDrawColor(...VERDE); doc.setLineWidth(0.6); doc.line(M, 22, W - M, 22);
     };
     const novaPagina = () => { doc.addPage(); cabecalhoPagina(); y = 30; };
@@ -123,7 +131,7 @@
           { columnStyles: { 0: { halign: 'center', cellWidth: 10 }, 2: { cellWidth: 13 }, 3: { halign: 'right', cellWidth: 20 }, 4: { halign: 'right', cellWidth: 20 }, 5: { halign: 'right', cellWidth: 20 }, 6: { halign: 'right', cellWidth: 20 }, 7: { cellWidth: 27 } },
             didDrawCell: (data) => barraCelula(data, 7) });
         if (a.orgaosLista.length) {
-          tabela(['Órgão aderente', 'Ofícios do CIMOP', 'Valor autorizado (R$)'], a.orgaosLista.map((o) => [o.nome, o.oficios, d.moeda(o.valor)]),
+          tabela(['Órgão aderente', 'Ofícios do ' + d.sigla, 'Valor autorizado (R$)'], a.orgaosLista.map((o) => [o.nome, o.oficios, d.moeda(o.valor)]),
             { columnStyles: { 2: { halign: 'right', cellWidth: 34 } }, headStyles: { fillColor: [247, 250, 253], textColor: SUAVE, fontStyle: 'bold', fontSize: 7.2 } });
         }
       }
@@ -178,13 +186,13 @@
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
     const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 12;
-    const logo = await imagem(d.logo || 'logo-cimop.jpg');
+    const logo = await imagem(d.logo);
     const topo = () => {
-      if (logo) doc.addImage(logo, 'JPEG', M, 7, 14, 10.4);
+      const xl = M + (logo ? desenharLogo(doc, logo, M, 7, 10.4, 17) + 3 : 0);
       doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...NAVY);
-      doc.text(d.sigla + ' · Adesões às Atas de Registro de Preços · relação consolidada', M + 17, 12);
+      doc.text(d.sigla + ' · Adesões às Atas de Registro de Preços · relação consolidada', xl, 12);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...SUAVE);
-      doc.text(d.escopo + ' · Situação em ' + d.dataBR, M + 17, 16.5);
+      doc.text(d.escopo + ' · Situação em ' + d.dataBR, xl, 16.5);
       doc.setDrawColor(...VERDE); doc.setLineWidth(0.6); doc.line(M, 20, W - M, 20);
     };
     topo();
@@ -194,7 +202,7 @@
     doc.text(d.linhas.length + ' adesão(ões) · ' + d.qtdOrgaos + ' órgão(s) · valor total autorizado R$ ' + d.moeda(d.total) + '. Não inclui pedidos cancelados nem itens negados.' + (d.semData ? ' ' + d.semData + ' adesão(ões) migrada(s) da planilha antiga sem data informada.' : ''), M, y); y += 5;
     doc.autoTable({
       startY: y, margin: { left: M, right: M, top: 26, bottom: 16 }, theme: 'grid',
-      head: [['Nº', 'Data da autorização', 'Ofício do CIMOP', 'Órgão aderente', 'Município/UF', 'ARP', 'Pregão', 'Contratado', 'Valor total (R$)']],
+      head: [['Nº', 'Data da autorização', 'Ofício do ' + d.sigla, 'Órgão aderente', 'Município/UF', 'ARP', 'Pregão', 'Contratado', 'Valor total (R$)']],
       body: d.linhas.map((l, k) => [k + 1, l.data, l.oficio, l.orgao, l.local, l.arp, l.pregao, l.contratado, d.moeda(l.valor)]),
       foot: [[{ content: 'Total autorizado', colSpan: 8, styles: { halign: 'right' } }, d.moeda(d.total)]], showFoot: 'lastPage',
       styles: { font: 'helvetica', fontSize: 7.8, cellPadding: 1.6, textColor: TEXTO, lineColor: LINHA, lineWidth: 0.2, valign: 'middle' },
