@@ -98,7 +98,10 @@ begin
             where n.nspname = 'consorcio' and c.relkind = 'r'
               and c.relname not in ('consorcios','usuarios','usuario_consorcios','modulos') loop
     execute format('alter table consorcio.%I add column if not exists consorcio_id uuid references consorcio.consorcios(id)', t);
+    -- sem gatilhos na carga (histórico, travas e integração não devem disparar só por marcar o consórcio)
+    execute format('alter table consorcio.%I disable trigger user', t);
     execute format('update consorcio.%I set consorcio_id = %L where consorcio_id is null', t, v_cimop);
+    execute format('alter table consorcio.%I enable trigger user', t);
     execute format('alter table consorcio.%I alter column consorcio_id set not null', t);
     execute format('alter table consorcio.%I alter column consorcio_id set default consorcio.atual()', t);
     execute format('create index if not exists %I on consorcio.%I (consorcio_id)', t || '_consorcio', t);
