@@ -58,9 +58,6 @@ insert into consorcio.usuario_consorcios (usuario_id, consorcio_id, perfil, ativ
 select u.id, (select id from consorcio.consorcios order by criado_em limit 1), coalesce(u.perfil, 'operador'), u.ativo
   from consorcio.usuarios u
 on conflict do nothing;
-update consorcio.usuarios set consorcio_atual = (select id from consorcio.consorcios order by criado_em limit 1) where consorcio_atual is null;
--- Suporte SOFT+ (cria consórcios e entra em qualquer um)
-update consorcio.usuarios set suporte = true where lower(email) = 'kennedyfrancelino@gmail.com';
 
 -- ---------- 2. Consórcio atual ----------------------------------------------------
 -- 1º: o fixado na transação (telas públicas, agenda); 2º: o escolhido pelo usuário; 3º: o primeiro dele.
@@ -168,13 +165,14 @@ end $$;
 
 -- ---------- 4. Papel dono das funções (não ignora as regras) ---------------------------
 do $$ begin
-  if not exists (select 1 from pg_roles where rolname = 'consorcio_dono') then create role consorcio_dono nologin noinherit; end if;
+  if not exists (select 1 from pg_roles where rolname = 'consorcio_dono') then create role consorcio_dono nologin; end if;
 end $$;
 grant consorcio_dono to postgres;
 grant usage, create on schema consorcio to consorcio_dono;
 grant usage on schema public, extensions to consorcio_dono;
-grant usage on schema auth to consorcio_dono;
-grant execute on function auth.uid() to consorcio_dono;
+-- o esquema auth (auth.uid) só é liberado pelo papel authenticated; o dono herda dele
+alter role consorcio_dono inherit;
+grant authenticated to consorcio_dono;
 grant select, insert, update, delete on all tables in schema consorcio to consorcio_dono;
 grant usage, select on all sequences in schema consorcio to consorcio_dono;
 -- Portal (integração com o site)
@@ -192,14 +190,14 @@ end $$;
 do $$ declare t text; begin
   for t in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
             where n.nspname = 'consorcio' and c.relkind = 'r' and c.relname not in ('consorcios','usuarios','usuario_consorcios','modulos') loop
-    execute format('alter table consorcio.%I enable row level security', t);
+    if not (select relrowsecurity from pg_class where oid = ('consorcio.' || t)::regclass) then execute format('alter table consorcio.%I enable row level security', t); end if;
     execute format('drop policy if exists isolar_consorcio on consorcio.%I', t);
     execute format('create policy isolar_consorcio on consorcio.%I as restrictive for all to public using (consorcio_id = consorcio.atual()) with check (consorcio_id = consorcio.atual())', t);
     execute format('drop policy if exists dono on consorcio.%I', t);
     execute format('create policy dono on consorcio.%I for all to consorcio_dono using (true) with check (true)', t);
   end loop;
   foreach t in array array['consorcios','usuarios','usuario_consorcios','modulos'] loop
-    execute format('alter table consorcio.%I enable row level security', t);
+    if not (select relrowsecurity from pg_class where oid = ('consorcio.' || t)::regclass) then execute format('alter table consorcio.%I enable row level security', t); end if;
     execute format('drop policy if exists dono on consorcio.%I', t);
     execute format('create policy dono on consorcio.%I for all to consorcio_dono using (true) with check (true)', t);
   end loop;
@@ -541,7 +539,7 @@ end $$;
 do $$ declare v_def text; begin
   v_def := pg_get_functiondef('consorcio.publico_irp_anexar_base(text, text, text, text)'::regprocedure);
   if v_def like '%Fale com o CIMOP%' then
-    execute replace(v_def, '''O prazo desta IRP terminou. Fale com o CIMOP.''', '''O prazo desta IRP terminou. Fale com o '' || (select sigla from consorcio.configuracoes limit 1) || ''.''');
+    execute replace(v_def, '''O prazo desta IRP terminou. Fale com o CIMOP.''', '''O prazo desta IRP terminou. Fale com o %.'', (select sigla from consorcio.configuracoes limit 1)');
   end if;
 end $$;
 
@@ -608,3 +606,8 @@ do $$ begin
   $c$);
 exception when others then raise notice 'pg_cron/pg_net indisponível: agenda do PNCP não alterada (%).', sqlerrm;
 end $$;
+
+-- ---------- 11. Usuários por último (o gatilho antigo de usuarios era adiado para o fim da transação) ----
+update consorcio.usuarios set consorcio_atual = (select id from consorcio.consorcios order by criado_em limit 1) where consorcio_atual is null;
+-- Suporte SOFT+ (cria consórcios e entra em qualquer um)
+update consorcio.usuarios set suporte = true where lower(email) = 'kennedyfrancelino@gmail.com';
