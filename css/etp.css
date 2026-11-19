@@ -31,3 +31,7 @@ tr.linha-total td { background: #eef4fb; font-weight: 700; }
 .texto-modelo { width: 100%; font-family: inherit; font-size: 14px; line-height: 1.55; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfe; }
 .aviso-etp { color: var(--red, #c73f3f); font-weight: 600; }
 .mt-2 { margin-top: 12px; }
+
+/* escolha de entes da estimativa */
+.lista-escolha { max-height: 52vh; overflow: auto; border: 1px solid var(--line, #d7e4f0); border-radius: 10px; padding: 8px 12px; margin-top: 10px; display: grid; gap: 4px; }
+.lista-escolha .check-linha { padding: 4px 0; }

@@ -32,6 +32,39 @@
   async function entesDados(forcar) { if (!cache.entes || forcar) cache.entes = await D.etpEntesDados(); return cache.entes; }
   async function categorias(forcar) { if (!cache.cats || forcar) cache.cats = await D.etpCategorias(); return cache.cats; }
 
+  // Escolha de entes (um ou vários) para a estimativa
+  function escolherEntes(entes, marcados, titulo) {
+    return new Promise((resolve) => {
+      const sel0 = new Set(marcados || []);
+      const busca = el('input', { type: 'search', placeholder: 'Buscar ente', 'aria-label': 'Buscar ente' });
+      const soCons = el('input', { type: 'checkbox' });
+      const caixa = el('div', { class: 'lista-escolha' }), cont = el('span', { class: 'ajuda' });
+      const visiveis = () => { const t = normal(busca.value); return entes.filter((o) => (!t || normal(o.nome).includes(t)) && (!soCons.checked || o.vinculo === 'consorciado')); };
+      const desenhar = () => {
+        cont.textContent = sel0.size + ' ente(s) escolhido(s)';
+        rc(caixa, ...visiveis().map((o) => {
+          const ck = el('input', { type: 'checkbox', checked: sel0.has(o.id) });
+          ck.addEventListener('change', () => { ck.checked ? sel0.add(o.id) : sel0.delete(o.id); cont.textContent = sel0.size + ' ente(s) escolhido(s)'; });
+          return el('label', { class: 'check-linha' }, ck, ' ', o.nome, o.vinculo ? el('span', { class: 'ajuda' }, ' · ' + o.vinculo.replace('_', ' ')) : null, o.ativo === false ? el('span', { class: 'ajuda' }, ' · inativo') : null);
+        }));
+      };
+      busca.addEventListener('input', desenhar); soCons.addEventListener('change', desenhar);
+      let ok = false;
+      const b = el('button', { type: 'button', class: 'btn btn-primario' }, 'Usar estes entes');
+      const d = abrirDialogo(titulo || 'Escolher entes', el('div', null,
+        el('p', { class: 'ajuda' }, 'Marque um ou mais entes. A estimativa, o quadro consolidado, o Excel e o texto do ETP passam a considerar só eles.'),
+        el('div', { class: 'filtros-linha' }, busca, el('label', { class: 'check-linha' }, soCons, ' Só consorciados')),
+        el('div', { class: 'botoes-linha' },
+          el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: () => { visiveis().forEach((o) => sel0.add(o.id)); desenhar(); } }, 'Marcar os da lista'),
+          el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: () => { sel0.clear(); desenhar(); } }, 'Desmarcar todos'), cont),
+        caixa),
+        [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), b], true);
+      b.addEventListener('click', () => { if (!sel0.size) { toast('Escolha pelo menos um ente.', true); return; } ok = true; d.close(); });
+      d.addEventListener('close', () => resolve(ok ? [...sel0] : null));
+      desenhar(); setTimeout(() => busca.focus(), 50);
+    });
+  }
+
   // ================================================================ 1. CONSUMO (EMPENHOS DO TCE-RN)
   function dialogoCategoria(cat, depois) {
     const f = { nome: txt(cat.nome || '', { maxlength: 160 }), termos: area((cat.termos || []).join('\n'), { rows: 8 }), excluir: area((cat.excluir || []).join('\n'), { rows: 4 }) };
@@ -265,13 +298,33 @@
     try { l = await D.etpEstimativas(); } catch (e) { rc(c, cabecalho('Estimativas de quantitativos'), el('p', { class: 'msg msg-falta' }, /etp_estimativas|schema cache/i.test(e.message) ? 'Rode o script 19 na Supabase.' : e.message)); return; }
     const nova = () => {
       const f = { t: txt('', { maxlength: 200, placeholder: 'Ex.: Estruturas para eventos 2027' }), p: txt('', { maxlength: 60 }), o: area('', { rows: 3 }) };
+      let escolhidos = [];
+      const rTodos = el('input', { type: 'radio', name: 'ne-ab', value: 'consorciados', checked: true }), rAlguns = el('input', { type: 'radio', name: 'ne-ab', value: 'escolhidos' });
+      const resumo = el('span', { class: 'ajuda' });
+      const bEsc = el('button', { type: 'button', class: 'btn btn-claro btn-p', hidden: true }, 'Escolher entes…');
+      const escolher = async () => {
+        let ents; try { ents = await entesDados(); } catch (e) { toast(e.message, true); return; }
+        const r = await escolherEntes(ents.filter((o) => o.ativo !== false), escolhidos, 'Entes da estimativa');
+        if (r) { escolhidos = r; resumo.textContent = ' ' + r.length + ' ente(s): ' + ents.filter((o) => r.includes(o.id)).map((o) => o.nome).slice(0, 4).join('; ') + (r.length > 4 ? '…' : ''); }
+        if (!escolhidos.length) { rTodos.checked = true; bEsc.hidden = true; resumo.textContent = ''; }
+      };
+      bEsc.addEventListener('click', escolher);
+      rTodos.addEventListener('change', () => { bEsc.hidden = true; resumo.textContent = ''; });
+      rAlguns.addEventListener('change', () => { bEsc.hidden = false; escolher(); });
       const b = el('button', { type: 'button', class: 'btn btn-primario' }, 'Criar');
-      const d = abrirDialogo('Nova estimativa', el('div', null, campo('ne-t', 'Título', f.t, null, true), campo('ne-p', 'Processo administrativo', f.p), campo('ne-o', 'Objeto', f.o)),
+      const d = abrirDialogo('Nova estimativa', el('div', null, campo('ne-t', 'Título', f.t, null, true), campo('ne-p', 'Processo administrativo', f.p), campo('ne-o', 'Objeto', f.o),
+          el('fieldset', { class: 'campo' }, el('legend', null, 'Para quais entes'),
+            el('label', { class: 'check-linha' }, rTodos, ' Todos os consorciados ativos'),
+            el('label', { class: 'check-linha' }, rAlguns, ' Só um ou alguns entes'),
+            el('div', null, bEsc, resumo))),
         [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), b]);
       b.addEventListener('click', async () => {
         if (!N.marcarErro(f.t, f.t.value.trim() ? '' : 'Informe o título.')) return;
+        if (rAlguns.checked && !escolhidos.length) { toast('Escolha os entes.', true); return; }
+        const dados = novoModelo();
+        if (rAlguns.checked) { dados.abrangencia = 'escolhidos'; escolhidos.forEach((id) => { dados.entes[id] = { incluir: true }; }); }
         ocupado(b, 'Criando…');
-        try { const r = await D.etpSalvarEstimativa({ titulo: f.t.value.trim(), processo: f.p.value.trim(), objeto: f.o.value.trim(), dados: novoModelo() }); d.close(); location.hash = '#etpestimativa-' + r.id; }
+        try { const r = await D.etpSalvarEstimativa({ titulo: f.t.value.trim(), processo: f.p.value.trim(), objeto: f.o.value.trim(), dados }); d.close(); location.hash = '#etpestimativa-' + r.id; }
         catch (e) { toast(e.message, true); ocupado(b); }
       });
     };
@@ -525,7 +578,15 @@
       const exportar = () => xlsx('Entes - ' + est.titulo + '.xlsx', [['Entes', [['Ente', 'UF', 'Vínculo', 'Incluído', 'População', 'Porte', 'Consumo médio (R$)', 'Valor-base do porte (R$)', 'Fator'],
         ...lista.map((o) => { const x = R.info[o.id]; return [o.nome, o.uf, o.vinculo || '', x ? 'Sim' : 'Não', x ? x.pop : (o.populacao || {}).populacao, x ? x.porte : '', x ? x.consumo : '', x ? R.valorBase[x.porte] : '', x ? x.fator : '']; })], [40, 5, 14, 9, 11, 7, 16, 18, 8]]]);
       return [el('div', { class: 'barra-lista' }, el('span', { class: 'ajuda' }, Object.keys(R.info).length + ' ente(s) na estimativa. Só os consorciados entram pela demanda do ETP na IRP (art. 8º, § 3º).'),
-          el('div', { class: 'botoes-linha' }, el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: () => { lista.forEach((o) => { m.entes[o.id] = Object.assign(m.entes[o.id] || {}, { incluir: o.vinculo === 'consorciado' }); }); recalc(); mudou(); redesenhar('entes', 'qtd', 'res'); } }, 'Só os consorciados'),
+          el('div', { class: 'botoes-linha' },
+            pode() ? el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: async () => {
+              const r = await escolherEntes(ctx.entes.filter((o) => o.ativo !== false || (m.entes[o.id] || {}).incluir), ctx.entes.filter((o) => (m.entes[o.id] || {}).incluir).map((o) => o.id));
+              if (!r) return;
+              ctx.entes.forEach((o) => { m.entes[o.id] = Object.assign(m.entes[o.id] || {}, { incluir: r.includes(o.id) }); });
+              m.abrangencia = 'escolhidos'; recalc(); mudou(); redesenhar('entes', 'qtd', 'res');
+            } }, 'Escolher entes…') : null,
+            pode() ? el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: () => { lista.forEach((o) => { m.entes[o.id] = Object.assign(m.entes[o.id] || {}, { incluir: o.vinculo === 'consorciado' }); }); m.abrangencia = 'consorciados'; recalc(); mudou(); redesenhar('entes', 'qtd', 'res'); } }, 'Só os consorciados') : null,
+            pode() ? el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: () => { lista.forEach((o) => { m.entes[o.id] = Object.assign(m.entes[o.id] || {}, { incluir: o.ativo !== false }); }); m.abrangencia = 'todos'; recalc(); mudou(); redesenhar('entes', 'qtd', 'res'); } }, 'Todos os ativos') : null,
             el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: exportar }, 'Exportar Excel'))),
         tabela(['', 'Ente', 'Vínculo', 'População', 'Porte', 'Consumo médio', 'Fator'], lista.map((o) => {
           const cfg = m.entes[o.id] = m.entes[o.id] || {};
@@ -729,7 +790,7 @@
       const anosF = (m.fator.anos || []).filter((a) => a < anoAtual).sort();
       const p = [];
       p.push('8. Estimativa das quantidades a serem contratadas');
-      p.push('Nos termos do art. 18, § 1º, IV, e do art. 40, III, da Lei nº 14.133/2021' + (N.normaTexto ? '' : '') + ', as quantidades foram estimadas para ' + ents.length + ' ente(s)' + (cons ? ', dos quais ' + cons + ' consorciado(s), que participam do Sistema de Registro de Preços na condição de órgãos participantes com a demanda prevista neste ETP' : '') + ', conforme a técnica descrita a seguir.');
+      p.push('Nos termos do art. 18, § 1º, IV, e do art. 40, III, da Lei nº 14.133/2021' + (N.normaTexto ? '' : '') + ', as quantidades foram estimadas para ' + (ents.length === 1 ? 'o ente ' + ents[0].nome : ents.length <= 5 ? 'os entes ' + ents.map((o) => o.nome).join(', ').replace(/, ([^,]*)$/, ' e $1') : ents.length + ' entes') + (!cons ? '' : ents.length === 1 ? ', consorciado, que participa do Sistema de Registro de Preços na condição de órgão participante com a demanda prevista neste ETP' : cons === ents.length ? ', todos consorciados, que participam do Sistema de Registro de Preços na condição de órgãos participantes com a demanda prevista neste ETP' : ', dos quais ' + cons + ' consorciado(s), que participam do Sistema de Registro de Preços na condição de órgãos participantes com a demanda prevista neste ETP') + ', conforme a técnica descrita a seguir.');
       const etapas = [];
       if (usa('eventos')) {
         etapas.push('classificação dos municípios em ' + m.portes.length + ' portes populacionais, segundo a estimativa populacional do IBGE' + (anoPop ? ' (' + anoPop + ')' : '') + ': ' + m.portes.map((x, k) => 'Porte ' + x.id + (x.ate == null ? ', acima de ' + n0(m.portes[k - 1].ate, 0) : ', até ' + n0(x.ate, 0)) + ' habitantes').join('; '));
