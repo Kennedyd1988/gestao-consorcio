@@ -4,6 +4,17 @@ No ar: https://gestao-consorcio.pages.dev · formulário público: https://gesta
 
 Sistema de gestão do consórcio público. Primeiro módulo: **controle de adesões às Atas de Registro de Preços**; outros módulos entram aos poucos.
 
+## Tela principal e módulos
+
+Depois do login abre a **tela principal**, com um ícone para cada módulo. Cada pessoa vê só os módulos liberados para ela
+(menu Usuários e acessos). O **administrador do sistema** vê todos; os demais têm, em cada módulo, o perfil Administrador do
+módulo, Operador ou Consulta.
+
+Para criar um módulo: acrescentar em `js/modulos.js` (id, nome, ícone, cor, rotas), `insert` em `consorcio.modulos`,
+menu em `MENUS` e telas em `TELAS` (`js/app.js`). No banco, as regras do módulo usam `consorcio.perfil_modulo('<id>')` e
+`consorcio.pode_editar_modulo('<id>')`. Os módulos usam os mesmos cadastros (órgãos/entes, configurações do consórcio) e
+mostram suas pendências no ícone da tela principal (`PENDENCIAS` em `js/app.js`).
+
 ## Módulo: adesões às ARPs
 
 Sistema para controlar as adesões de órgãos não participantes às Atas de Registro de Preços do CIMOP:
@@ -20,6 +31,8 @@ Segue o manual de padrões SOFT+ (mesmo visual e componentes do painel do Portal
 | `index.html` | Painel (login, menu, telas) e formulário público (`#solicitar`, `#consultar`) |
 | `css/estilos.css` | Estilos oficiais do painel SOFT+ (copiados do portal-pntp) |
 | `css/adesoes.css` | Complementos deste sistema |
+| `js/modulos.js` | Catálogo dos módulos da tela principal (nome, ícone, cor, rotas) |
+| `css/modulos.css` | Tela principal (módulos) e acessos por módulo |
 | `js/app.js` | Telas |
 | `js/regras.js` | Regras de limite (as mesmas do banco) |
 | `js/oficio.js` + `js/modelo-oficio.js` | Ofício em Word (timbre e rodapé do Ofício nº 105/2026) |
@@ -30,6 +43,7 @@ Segue o manual de padrões SOFT+ (mesmo visual e componentes do painel do Portal
 | `supabase/functions/consorcio-pncp` | Edge Function que busca as atas e os termos aditivos no PNCP (agenda diária às 04h, horário de Brasília) |
 | `supabase/functions/consorcio-enviar-email` | Edge Function que envia o e-mail de resposta (SMTP do projeto: SMTP_HOST, SMTP_PORT, SMTP_USUARIO, SMTP_SENHA, SMTP_REMETENTE; opcional CONSORCIO_SMTP_REMETENTE) |
 | `supabase/05_email_documentos.sql` | Links dos documentos, link do processo por ata, telefone do órgão e registro dos e-mails |
+| `supabase/10_modulos_permissoes.sql` | Módulos e permissão por módulo (administrador do sistema; administrador do módulo, operador, consulta) |
 | `supabase/08_precos_reequilibrio.sql` | Linha do tempo de preços (reequilíbrios) e preço congelado em cada adesão |
 | `supabase/07_corrigir_pedido.sql` | Correção de itens e quantidades de pedido lançado (substitui mantendo o número) |
 | `supabase/06_pncp_orgaos.sql` | Órgãos/entidades de cada ata no PNCP (conferência com as adesões autorizadas) |

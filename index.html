@@ -35,12 +35,12 @@
         window.NOTAS_VERSAO = v.notas || [];
         try { localStorage.setItem('gestao_consorcio_versao', v.versao); } catch (e) {}
         var q = '?v=' + encodeURIComponent(v.versao);
-        ['css/estilos.css', 'css/adesoes.css'].forEach(function (h, i) {
+        ['css/estilos.css', 'css/adesoes.css', 'css/modulos.css'].forEach(function (h, i) {
           var css = document.createElement('link'); css.rel = 'stylesheet'; css.href = h + q;
-          if (i === 1) css.onload = css.onerror = function () { document.documentElement.classList.add('estilo-ok'); };
+          if (i === 2) css.onload = css.onerror = function () { document.documentElement.classList.add('estilo-ok'); };
           document.head.appendChild(css);
         });
-        ['js/config.js', 'js/regras.js', 'js/modelo-oficio.js', 'js/oficio.js', 'js/planilhas.js', 'js/relatorio.js', 'js/demo-dados.js', 'js/dados.js', 'js/app.js'].reduce(function (ant, arq) {
+        ['js/config.js', 'js/modulos.js', 'js/regras.js', 'js/modelo-oficio.js', 'js/oficio.js', 'js/planilhas.js', 'js/relatorio.js', 'js/demo-dados.js', 'js/dados.js', 'js/app.js'].reduce(function (ant, arq) {
           return ant.then(function () {
             return new Promise(function (ok, erro) {
               var s = document.createElement('script'); s.src = arq + q; s.onload = ok; s.onerror = erro; document.body.appendChild(s);
@@ -71,11 +71,11 @@
       <span class="marca-nome">SOFT<span class="marca-mais">+</span> Consórcios</span>
     </div>
     <h1>Gestão de Consórcio</h1>
-    <p>Gestão do consórcio público, começando pelo controle de adesões às Atas de Registro de Preços: saldos, limites de 50% por órgão e do dobro por item, e ofício em Word gerado automaticamente.</p>
+    <p>Todos os módulos de gestão do consórcio público num só lugar, com um login só. Cada pessoa vê os módulos liberados para ela.</p>
     <ul class="lista-marca">
-      <li>Importação das atas e itens por planilha-modelo</li>
-      <li>Conferência automática do art. 86, §§ 4º e 5º, da Lei nº 14.133/2021</li>
-      <li>Ofício padrão do CIMOP pronto a cada pedido</li>
+      <li>Controle de Adesões às Atas de Registro de Preços</li>
+      <li>Permissões por módulo: administrador, operador ou consulta</li>
+      <li>Módulos integrados, usando os mesmos cadastros</li>
     </ul>
   </div>
   <div class="lado-form">
@@ -130,6 +130,37 @@
   </header>
   <main id="conteudo-publico" class="limite-publico conteudo-publico" tabindex="-1"></main>
   <footer class="rodape-publico"><div class="limite-publico">Gestão de Consórcio · SOFT<span class="marca-mais">+</span> Consórcios</div></footer>
+</section>
+
+<section id="tela-modulos" class="tela tela-modulos" hidden>
+  <header class="topo-modulos">
+    <div class="limite-modulos topo-modulos-linha">
+      <div class="marca">
+        <img src="logo-consorcios.png" alt="" width="44" height="44" class="marca-icone">
+        <span class="marca-nome">SOFT<span class="marca-mais">+</span> Consórcios</span>
+      </div>
+      <div class="topo-modulos-acoes">
+        <button type="button" class="topo-usuario" id="topo-usuario-modulos" title="Minha conta"></button>
+        <button type="button" class="btn btn-claro" id="btn-sair-modulos">Sair</button>
+      </div>
+    </div>
+  </header>
+  <main id="conteudo-modulos" class="limite-modulos conteudo-modulos" tabindex="-1">
+    <section class="faixa-modulos" aria-labelledby="modulos-ola">
+      <div class="faixa-modulos-texto">
+        <span class="rotulo-faixa">Gestão de Consórcio</span>
+        <h1 id="modulos-ola">Bem-vindo!</h1>
+        <p id="modulos-consorcio"></p>
+      </div>
+      <img src="logo-cimop.jpg" alt="CIMOP" class="faixa-modulos-logo" width="150" height="111">
+    </section>
+    <div class="secao-modulos">
+      <h2>Módulos</h2>
+      <p class="sub">Escolha o módulo. Você vê só os módulos liberados para o seu usuário.</p>
+      <div id="grade-modulos" class="grade-modulos"></div>
+    </div>
+  </main>
+  <footer class="rodape-modulos"><div class="limite-modulos">SOFT<span class="marca-mais">+</span> Consórcios · Versão <span class="versao-app">—</span></div></footer>
 </section>
 
 <section id="tela-painel" class="tela tela-painel" hidden>

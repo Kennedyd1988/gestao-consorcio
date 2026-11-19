@@ -88,6 +88,13 @@
       }
       return indexar(base);
     }
+    // Usuários de exemplo (só na prévia), para ver os acessos por módulo
+    const demoUsuarios = [
+      { id: '1', nome: 'Kennedy Dantas Francelino', email: 'kennedyfrancelino@gmail.com', perfil: 'administrador', ativo: true },
+      { id: '2', nome: 'Servidor de Exemplo', email: 'licitacao@cimop.rn.gov.br', perfil: 'operador', ativo: true },
+      { id: '3', nome: 'Controle Interno (exemplo)', email: 'controle@cimop.rn.gov.br', perfil: 'consulta', ativo: true },
+    ];
+    let demoAcessos = [{ usuario_id: '2', modulo_id: 'adesoes', perfil: 'operador' }, { usuario_id: '3', modulo_id: 'adesoes', perfil: 'consulta' }];
     const api = {
       modo: 'demo',
       async sessao() { return { id: '1', nome: 'Kennedy Dantas Francelino', email: 'kennedyfrancelino@gmail.com', perfil: 'administrador' }; },
@@ -219,9 +226,12 @@
         Object.assign(a, { situacao: 'confirmada', dados: d, decidido_por_nome: 'Kennedy Dantas Francelino', decidido_em: new Date().toISOString() });
         salvarLocal(); indexar(base);
       },
-      async usuarios() { return [{ id: '1', nome: 'Kennedy Dantas Francelino', email: 'kennedyfrancelino@gmail.com', perfil: 'administrador', ativo: true }]; },
+      async usuarios() { return demoUsuarios.map((u) => ({ ...u })); },
       async criarUsuario() { throw new Error('Na prévia não é possível criar usuários. Isso funciona na versão publicada.'); },
-      async salvarUsuario() {},
+      async salvarUsuario(u) { const x = demoUsuarios.find((y) => y.id === u.id); if (x) Object.assign(x, u); },
+      async acessos() { const m = {}; for (const x of window.MODULOS.lista) m[x.id] = 'administrador'; return m; },
+      async acessosDeTodos() { return demoAcessos.map((a) => ({ ...a })); },
+      async salvarAcessos(id, lista) { demoAcessos = demoAcessos.filter((a) => a.usuario_id !== id).concat(lista.map((a) => ({ usuario_id: id, modulo_id: a.modulo, perfil: a.perfil }))); },
     };
     return api;
   }
@@ -440,6 +450,27 @@
         return data;
       },
       async salvarUsuario(u) { ok(await sb.from('usuarios').update({ nome: u.nome, perfil: u.perfil, ativo: u.ativo }).eq('id', u.id)); },
+      // Módulos liberados para a pessoa: { adesoes: 'operador', sistema: 'administrador' }.
+      // Sem o script 10: administrador vê tudo; os demais usam o perfil antigo no módulo de adesões.
+      async acessos(u) {
+        const admin = u.perfil === 'administrador', mapa = {};
+        const r = await sb.from('usuario_modulos').select('modulo_id, perfil').eq('usuario_id', u.id);
+        if (r.error) {   // script 10 ainda não rodado
+          if (admin) for (const m of window.MODULOS.lista) mapa[m.id] = 'administrador'; else mapa.adesoes = u.perfil;
+          return mapa;
+        }
+        const mods = await sb.from('modulos').select('id, ativo');
+        const desligados = new Set((mods.data || []).filter((m) => m.ativo === false).map((m) => m.id));
+        if (admin) { for (const m of window.MODULOS.lista) if (!desligados.has(m.id)) mapa[m.id] = 'administrador'; mapa.sistema = 'administrador'; }
+        else for (const x of r.data) if (!desligados.has(x.modulo_id)) mapa[x.modulo_id] = x.perfil;
+        return mapa;
+      },
+      async acessosDeTodos() {
+        const r = await sb.from('usuario_modulos').select('usuario_id, modulo_id, perfil');
+        if (r.error) { const e = new Error('Rode o script 10 na Supabase para liberar os acessos por módulo.'); e.semScript = true; throw e; }
+        return r.data;
+      },
+      async salvarAcessos(id, lista) { ok(await sb.rpc('salvar_acessos', { p_usuario: id, p_acessos: lista })); },
     };
     return api;
   }

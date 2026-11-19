@@ -187,9 +187,13 @@
   const ordOficio = (p) => { const m = String(p.numero_oficio || '').match(/(\d+)\/(\d{4})/); return m ? Number(m[2]) * 10000 + Number(m[1]) : 0; };
   const hoje = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
   const diasAte = (d) => Math.round((new Date(d + 'T12:00:00') - new Date(hoje() + 'T12:00:00')) / 86400000);
-  const podeEditar = () => ['administrador', 'operador'].includes(estado.usuario && estado.usuario.perfil);
-  const eAdmin = () => estado.usuario && estado.usuario.perfil === 'administrador';
-  const NOME_PERFIL = { administrador: 'Administrador', operador: 'Operador', consulta: 'Consulta' };
+  // Permissões por módulo (estado.acessos = { adesoes: 'operador', ... }); "sistema" = administrador do sistema
+  const M = window.MODULOS;
+  const perfilEm = (modulo) => (estado.acessos || {})[modulo] || null;
+  const podeEditar = () => ['administrador', 'operador'].includes(perfilEm('adesoes'));
+  const eAdmin = () => perfilEm('adesoes') === 'administrador';
+  const eAdminSistema = () => !!(estado.usuario && estado.usuario.perfil === 'administrador');
+  const NOME_PERFIL = M.NOME_PERFIL;
   const SIT = { autorizado: ['Autorizado', 'etiqueta-autorizado'], parcial: ['Autorizado em parte', 'etiqueta-parcial'], negado: ['Negado', 'etiqueta-negado'], cancelado: ['Cancelado', 'etiqueta-cancelado'] };
   const etiquetaSit = (s) => el('span', { class: 'etiqueta ' + SIT[s][1] }, SIT[s][0]);
   const cabecalho = (titulo, sub, ...botoes) => el('div', { class: 'cabecalho-modulo' }, el('div', null, el('h1', null, titulo), sub ? el('p', { class: 'sub' }, sub) : null), botoes.length ? el('div', { class: 'botoes-cabecalho' }, botoes) : null);
@@ -272,7 +276,7 @@
     if (!marcarErro(email, /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim()) ? '' : 'Informe um e-mail válido.')) return;
     if (!marcarErro(senha, senha.value ? '' : 'Informe a senha.')) return;
     const btn = $('btn-entrar'); ocupado(btn, 'Entrando…'); msg('login-msg');
-    try { estado.usuario = await D.entrar(email.value.trim(), senha.value); await abrirPainel(); }
+    try { estado.usuario = await D.entrar(email.value.trim(), senha.value); await entrarNoSistema(true); }
     catch (e) { msg('login-msg', e.message); } finally { ocupado(btn); }
   });
   $('link-esqueci').addEventListener('click', async () => {
@@ -286,31 +290,49 @@
     if (!marcarErro(s1, s1.value.length >= 8 && /\d/.test(s1.value) && /\D/.test(s1.value) ? '' : 'Use pelo menos 8 caracteres, com letras e números.')) return;
     if (!marcarErro(s2, s1.value === s2.value ? '' : 'As senhas não conferem.')) return;
     const btn = $('btn-salvar-senha'); ocupado(btn, 'Salvando…');
-    try { await D.trocarSenha(s1.value); estado.usuario = await D.sessao(); toast('Senha salva.'); await abrirPainel(); }
+    try { await D.trocarSenha(s1.value); estado.usuario = await D.sessao(); toast('Senha salva.'); await entrarNoSistema(true); }
     catch (e) { msg('nova-msg', e.message); } finally { ocupado(btn); }
   });
-  $('btn-sair').addEventListener('click', async () => { await D.sair(); estado.usuario = null; mostrarTela('tela-login'); $('form-login').hidden = false; $('form-nova-senha').hidden = true; });
+  async function sair() {
+    await D.sair(); Object.assign(estado, { usuario: null, acessos: null, base: null, modulo: null, logado: false });
+    history.replaceState(null, '', location.pathname + location.search);
+    mostrarTela('tela-login'); $('form-login').hidden = false; $('form-nova-senha').hidden = true;
+  }
+  $('btn-sair').addEventListener('click', sair);
+  $('btn-sair-modulos').addEventListener('click', sair);
+  $('topo-usuario-modulos').addEventListener('click', () => minhaConta());
   $('btn-topo-novo').addEventListener('click', () => { location.hash = '#novo'; });
   $('btn-menu').addEventListener('click', () => { const a = $('lateral').classList.toggle('aberta'); $('btn-menu').setAttribute('aria-expanded', a ? 'true' : 'false'); });
   $('topo-usuario').addEventListener('click', minhaConta);
 
   function minhaConta() {
     const u = estado.usuario;
-    const d = abrirDialogo('Minha conta', el('div', null, el('dl', { class: 'dados' }, el('dt', null, 'Nome'), el('dd', null, u.nome), el('dt', null, 'E-mail'), el('dd', null, u.email), el('dt', null, 'Perfil'), el('dd', null, NOME_PERFIL[u.perfil]))),
+    const mods = M.lista.filter((m) => perfilEm(m.id) && m.id !== 'sistema');
+    const d = abrirDialogo('Minha conta', el('div', null, el('dl', { class: 'dados' }, el('dt', null, 'Nome'), el('dd', null, u.nome), el('dt', null, 'E-mail'), el('dd', null, u.email),
+      el('dt', null, 'Acesso'), el('dd', null, eAdminSistema() ? 'Administrador do sistema (todos os módulos)' : mods.length ? mods.map((m) => m.nome + ': ' + NOME_PERFIL[perfilEm(m.id)]).join(' · ') : 'Nenhum módulo liberado'))),
       [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => { d.close(); mostrarTela('tela-login'); $('form-login').hidden = true; $('form-nova-senha').hidden = false; } }, 'Trocar senha'),
         el('button', { type: 'button', class: 'btn btn-primario', onclick: () => d.close() }, 'Fechar')]);
   }
 
   // ---------------------------------------------------------------- menu e rotas
-  const MENU = [
-    ['Adesões', [['solicitacoes', 'Solicitações recebidas'], ['novo', 'Novo pedido de adesão', () => podeEditar()], ['pedidos', 'Pedidos e ofícios'], ['relatorio', 'Relatório em PDF']]],
-    ['Cadastros', [['atas', 'Atas de registro de preços'], ['orgaos', 'Órgãos aderentes'], ['pncp', 'Atualizações do PNCP', () => podeEditar()]]],
-    ['Sistema', [['importar', 'Importar planilha', () => podeEditar()], ['configuracoes', 'Configurações do ofício', () => eAdmin()], ['usuarios', 'Usuários', () => eAdmin()]]],
-  ];
-  function montarMenu() {
+  // Menu lateral de cada módulo. O item "Início" do módulo vem de MODULOS (campo inicio).
+  const MENUS = {
+    adesoes: [
+      ['Adesões', [['solicitacoes', 'Solicitações recebidas'], ['novo', 'Novo pedido de adesão', () => podeEditar()], ['pedidos', 'Pedidos e ofícios'], ['relatorio', 'Relatório em PDF']]],
+      ['Cadastros', [['atas', 'Atas de registro de preços'], ['orgaos', 'Órgãos aderentes'], ['pncp', 'Atualizações do PNCP', () => podeEditar()]]],
+      ['Módulo', [['importar', 'Importar planilha', () => podeEditar()], ['configuracoes', 'Configurações do ofício', () => eAdmin()]]],
+    ],
+    sistema: [
+      ['Sistema', [['usuarios', 'Usuários e acessos']]],
+    ],
+  };
+  function montarMenu(mod) {
     const menu = $('menu');
-    menu.replaceChildren(el('a', { href: '#inicio', 'data-rota': 'inicio', class: 'menu-inicio' }, 'Início'));
-    for (const [grupo, itens] of MENU) {
+    menu.replaceChildren(
+      el('a', { href: '#modulos', class: 'menu-voltar', 'data-rota': 'modulos', 'data-busca': normalizar('todos os modulos tela principal') }, el('span', { 'aria-hidden': 'true' }, '←'), ' Todos os módulos'),
+      el('div', { class: 'menu-modulo', style: '--g:' + mod.cor }, el('span', { class: 'menu-modulo-icone' }, M.icone(mod.id, 18)), el('span', null, mod.nome)));
+    if (mod.id === 'adesoes') menu.append(el('a', { href: '#inicio', 'data-rota': 'inicio', class: 'menu-inicio', 'data-busca': normalizar('inicio painel') }, 'Início'));
+    for (const [grupo, itens] of MENUS[mod.id] || []) {
       const vis = itens.filter((i) => !i[2] || i[2]()); if (!vis.length) continue;
       menu.append(el('div', { class: 'menu-bloco', role: 'group', 'aria-label': grupo }, el('span', { class: 'menu-grupo', 'aria-hidden': 'true' }, grupo.toUpperCase()),
         vis.map(([r, n]) => el('a', { href: '#' + r, 'data-rota': r, 'data-busca': normalizar(n + ' ' + grupo) }, n, el('span', { class: 'aba-qtd', 'data-cont': r, hidden: true })))));
@@ -336,8 +358,8 @@
   $('menu').addEventListener('click', (ev) => { if (ev.target.closest('a')) { $('lateral').classList.remove('aberta'); $('btn-menu').setAttribute('aria-expanded', 'false'); } });
 
   const TELAS = {};
+  // Telas de um módulo (o painel com menu lateral)
   function rotear() {
-    if (!estado.base) return;
     const h = (location.hash || '#inicio').slice(1);
     const [rota, ...resto] = h.split('-'); const id = resto.join('-');
     const destaque = { pedido: 'pedidos', ata: 'atas', item: 'atas', solicitacao: 'solicitacoes' }[rota] || rota;
@@ -349,31 +371,61 @@
     c.focus({ preventScroll: true }); window.scrollTo(0, 0);
     if (estado.irPrecos) { estado.irPrecos = false; const alvo = document.getElementById('precos-item'); if (alvo) alvo.scrollIntoView(); }
   }
+  const temAcesso = (mod) => !!mod && !!perfilEm(mod.id) && (!mod.soAdminSistema || eAdminSistema());
+  const modulosLiberados = () => M.lista.filter(temAcesso);
+
+  // Decide entre a tela principal (#modulos) e o módulo dono da rota.
+  async function navegar() {
+    if (!estado.logado) return;
+    const rota = (location.hash || '').slice(1).split('-')[0];
+    if (!rota || rota === 'modulos') { telaModulos(); return; }
+    const mod = M.daRota(rota);
+    if (!temAcesso(mod)) {
+      history.replaceState(null, '', '#modulos'); telaModulos();
+      toast(mod ? 'Seu usuário não tem acesso ao módulo ' + mod.nome + '. Fale com o administrador.' : 'Página não encontrada.', true);
+      return;
+    }
+    if (mod.id === 'adesoes' && !estado.base) {
+      mostrarTela('tela-carregando'); $('carregando-texto').textContent = 'Carregando atas e pedidos…';
+      try { await recarregar(); } catch (e) { mostrarTela('tela-modulos'); toast(e.message, true); return; }
+    }
+    if (estado.modulo !== mod.id) {
+      estado.modulo = mod.id;
+      montarMenu(mod); atualizarContadores();
+      const sigla = (estado.base && estado.base.config.sigla) || 'CIMOP';
+      $('topo-orgao-nome').textContent = sigla + ' · ' + mod.nome;
+      $('topo-orgao-perfil').textContent = mod.id === 'sistema' ? 'Administrador do sistema' : 'Seu perfil neste módulo: ' + NOME_PERFIL[perfilEm(mod.id)];
+      $('btn-topo-novo').hidden = !(mod.id === 'adesoes' && podeEditar());
+      $('menu-busca').value = '';
+    }
+    mostrarTela('tela-painel');
+    rotear();
+  }
+
   // Formulário público (#solicitar) e consulta (#consultar) abrem sem login
   const ehPublica = () => /^#(solicitar|consultar)/.test(location.hash);
   window.addEventListener('hashchange', () => {
     if (ehPublica()) { mostrarTela('tela-publica'); telaPublica(); return; }
-    if (estado.usuario) { if (!estado.painel) abrirPainel(); else { mostrarTela('tela-painel'); rotear(); } }
+    if (estado.logado) navegar();
     else if (!$('tela-login').hidden || !$('tela-publica').hidden) { mostrarTela('tela-login'); }
   });
 
-  async function abrirPainel() {
-    mostrarTela('tela-carregando'); $('carregando-texto').textContent = 'Carregando atas e pedidos…';
+  // Depois do login (ou com a sessão já aberta): carrega os acessos e abre a tela principal.
+  async function entrarNoSistema(paraModulos) {
+    mostrarTela('tela-carregando'); $('carregando-texto').textContent = 'Abrindo o sistema…';
     if (estado.usuario.troca_senha && D.modo !== 'demo') { mostrarTela('tela-login'); $('form-login').hidden = true; $('form-nova-senha').hidden = false; return; }
-    await recarregar();
+    estado.acessos = await D.acessos(estado.usuario);
+    estado.modulo = null; estado.logado = true;
     $('topo-usuario').textContent = estado.usuario.nome;
-    $('topo-orgao-perfil').textContent = (estado.base.config.orgao_nome || '') + ' · Seu perfil: ' + NOME_PERFIL[estado.usuario.perfil];
-    $('btn-topo-novo').hidden = !podeEditar();
+    $('topo-usuario-modulos').textContent = estado.usuario.nome;
     if (D.modo === 'demo') {
       const f = $('faixa-demo'); f.hidden = false;
       f.replaceChildren(el('strong', null, 'Prévia de demonstração.'), ' Os dados ficam só neste navegador (atas e histórico da planilha de importação). Nada é gravado no banco.',
         el('a', { class: 'link', href: '#solicitar' }, 'Ver o formulário do município ↗'),
         el('button', { type: 'button', class: 'link', onclick: async () => { if (await confirmar('Recomeçar a demonstração', 'Apaga o que você lançou nesta prévia e volta ao histórico migrado da planilha.', 'Recomeçar', true)) { estado.base = await D.reiniciarDemo(); rotear(); toast('Demonstração reiniciada.'); } } }, 'Recomeçar a demonstração'));
     }
-    montarMenu(); atualizarContadores();
-    estado.painel = true;
-    mostrarTela('tela-painel');
-    rotear();
+    if (paraModulos && location.hash !== '#modulos') history.replaceState(null, '', '#modulos');
+    await navegar();
   }
 
   async function iniciar() {
@@ -381,11 +433,61 @@
     if (ehPublica()) { mostrarTela('tela-publica'); telaPublica(); }
     try {
       estado.usuario = await D.sessao();
-      if (ehPublica()) { if (estado.usuario) { await recarregar(); montarMenu(); } }
-      else if (estado.usuario) await abrirPainel(); else mostrarTela('tela-login');
+      if (ehPublica()) {
+        if (estado.usuario) { estado.acessos = await D.acessos(estado.usuario); estado.logado = true; if (perfilEm('adesoes')) await recarregar(); }
+      } else if (estado.usuario) await entrarNoSistema(false); else mostrarTela('tela-login');
     } catch (e) { mostrarTela('tela-login'); msg('login-msg', e.message); }
     if (D.sb) D.sb.auth.onAuthStateChange((ev) => { if (ev === 'PASSWORD_RECOVERY') { mostrarTela('tela-login'); $('form-login').hidden = true; $('form-nova-senha').hidden = false; } });
     if ('serviceWorker' in navigator && D.modo !== 'demo') navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
+  }
+
+  // ================================================================= TELA PRINCIPAL (módulos)
+  // Um ícone por módulo liberado. Os números de pendências vêm dos próprios módulos (integração).
+  const PENDENCIAS = {
+    adesoes: () => {
+      const b = estado.base; if (!b) return null;
+      const sol = b.solicitacoes.filter((x) => x.situacao === 'recebida' || x.situacao === 'em_analise').length;
+      const pn = podeEditar() ? (b.pncp || []).filter((x) => x.situacao === 'pendente').length : 0;
+      const vigentes = b.atas.filter((a) => a.ativo !== false && (!a.vigencia_fim || diasAte(a.vigencia_fim) >= 0)).length;
+      const itens = [];
+      if (sol) itens.push([sol, sol === 1 ? 'solicitação recebida' : 'solicitações recebidas', '#solicitacoes']);
+      if (pn) itens.push([pn, pn === 1 ? 'atualização do PNCP' : 'atualizações do PNCP', '#pncp']);
+      return { resumo: vigentes + (vigentes === 1 ? ' ata vigente' : ' atas vigentes'), itens };
+    },
+  };
+  function telaModulos() {
+    estado.modulo = null;
+    mostrarTela('tela-modulos');
+    document.title = 'SOFT+ Consórcios · Gestão de Consórcio';
+    const nome = (estado.usuario.nome || '').split(' ')[0];
+    const cfg = (estado.base && estado.base.config) || {};
+    $('modulos-ola').textContent = nome ? 'Olá, ' + nome + '!' : 'Bem-vindo!';
+    $('modulos-consorcio').textContent = cfg.orgao_nome || 'Consórcio Intermunicipal Multifinalitário dos Municípios do Oeste Potiguar';
+    const lib = modulosLiberados();
+    const grade = $('grade-modulos');
+    if (!lib.length) {
+      rc(grade, el('div', { class: 'modulos-vazio' }, el('h2', null, 'Nenhum módulo liberado'),
+        el('p', null, 'Seu login está ativo, mas ainda não tem acesso a nenhum módulo. Peça ao administrador do sistema para liberar em "Usuários e acessos".')));
+      return;
+    }
+    rc(grade, lib.map((m) => {
+      const pend = PENDENCIAS[m.id] ? PENDENCIAS[m.id]() : null;
+      const total = pend ? pend.itens.reduce((t, x) => t + x[0], 0) : 0;
+      return el('article', { class: 'cartao-modulo', style: '--g:' + m.cor, 'data-modulo': m.id },
+        el('a', { class: 'cartao-modulo-link', href: m.inicio, 'aria-describedby': 'desc-mod-' + m.id },
+          el('span', { class: 'icone-modulo' }, M.icone(m.id, 34), total ? el('span', { class: 'icone-modulo-qtd', 'aria-label': total + ' pendência(s)' }, total > 99 ? '99+' : total) : null),
+          el('span', { class: 'cartao-modulo-nome' }, m.nome)),
+        el('p', { class: 'cartao-modulo-desc', id: 'desc-mod-' + m.id }, m.descricao),
+        pend && pend.itens.length ? el('ul', { class: 'cartao-modulo-pend' }, pend.itens.map(([n, t, h]) => el('li', null, el('a', { href: h }, el('strong', null, n), ' ' + t)))) : null,
+        el('div', { class: 'cartao-modulo-rodape' },
+          el('span', { class: 'etiqueta' }, m.id === 'sistema' ? 'Administrador do sistema' : 'Perfil: ' + NOME_PERFIL[perfilEm(m.id)]),
+          pend ? el('span', { class: 'cartao-modulo-resumo' }, pend.resumo) : null));
+    }));
+    // Carrega os dados do módulo de adesões em segundo plano para mostrar as pendências (e abrir o módulo sem espera).
+    if (perfilEm('adesoes') && !estado.base && !estado.carregandoBase) {
+      estado.carregandoBase = true;
+      recarregar().then(() => { if (!$('tela-modulos').hidden) telaModulos(); }).catch(() => {}).finally(() => { estado.carregandoBase = false; });
+    }
   }
 
   // ================================================================= INÍCIO
@@ -2014,36 +2116,78 @@
       el('div', { class: 'barra-salvar' }, btn));
   }
 
-  // ================================================================= USUÁRIOS
+  // ================================================================= USUÁRIOS E ACESSOS (módulo "sistema")
+  const MODULOS_COM_PERFIL = () => M.lista.filter((m) => !m.soAdminSistema);
+  function chipsAcesso(u, acessos) {
+    if (u.perfil === 'administrador') return el('span', { class: 'etiqueta etiqueta-admin' }, 'Administrador do sistema · todos os módulos');
+    if (!acessos) return el('span', { class: 'etiqueta' }, 'Controle de Adesões: ' + (NOME_PERFIL[u.perfil] || u.perfil));
+    const meus = acessos.filter((a) => a.usuario_id === u.id && M.porId(a.modulo_id));
+    if (!meus.length) return el('span', { class: 'etiqueta etiqueta-cancelado' }, 'Nenhum módulo');
+    return el('span', { class: 'chips-modulos' }, meus.map((a) => { const m = M.porId(a.modulo_id);
+      return el('span', { class: 'chip-modulo', style: '--g:' + m.cor }, el('span', { class: 'chip-modulo-icone' }, M.icone(m.id, 14)), m.nome + ': ' + NOME_PERFIL[a.perfil]); }));
+  }
   TELAS.usuarios = async (c) => {
-    if (!eAdmin()) { rc(c, cabecalho('Acesso não permitido')); return; }
-    const btnNovo = el('button', { type: 'button', class: 'btn btn-primario', onclick: () => formUsuario() }, '+ Novo usuário');
-    rc(c, cabecalho('Usuários', 'Quem pode entrar no sistema.', btnNovo), el('p', { class: 'ajuda' }, 'Carregando…'));
+    if (!eAdminSistema()) { rc(c, cabecalho('Acesso não permitido', 'Só o administrador do sistema cuida dos usuários.')); return; }
+    const btnNovo = el('button', { type: 'button', class: 'btn btn-primario', onclick: () => formUsuario(null, acessos) }, '+ Novo usuário');
+    rc(c, cabecalho('Usuários e acessos', 'Quem pode entrar no sistema e quais módulos cada pessoa vê.', btnNovo), el('p', { class: 'ajuda' }, 'Carregando…'));
     const lista = await D.usuarios();
-    rc(c, cabecalho('Usuários', lista.length + ' usuário(s). Perfis: Administrador (tudo), Operador (lança pedidos e cadastra), Consulta (só vê).', btnNovo),
-      tabela(['Nome', 'E-mail', 'Perfil', 'Situação', ''], lista.map((u) => el('tr', null, el('td', null, el('strong', null, u.nome)), el('td', null, u.email), el('td', null, NOME_PERFIL[u.perfil]),
+    let acessos = null, semScript = false;
+    try { acessos = await D.acessosDeTodos(); } catch (e) { semScript = true; }
+    rc(c, cabecalho('Usuários e acessos', lista.length + ' usuário(s). Cada pessoa só vê, na tela principal, os módulos liberados para ela.', btnNovo),
+      semScript ? el('p', { class: 'msg msg-falta' }, 'Rode o script 10 (supabase/10_modulos_permissoes.sql) na Supabase para liberar o acesso por módulo. Até lá vale o perfil antigo, só no Controle de Adesões.') : null,
+      el('div', { class: 'legenda-perfis' },
+        el('strong', null, 'Perfis em cada módulo: '),
+        Object.keys(NOME_PERFIL).map((k) => el('span', null, el('b', null, NOME_PERFIL[k]), ' — ' + M.AJUDA_PERFIL[k] + '. ')),
+        el('span', null, el('b', null, 'Administrador do sistema'), ' — todos os módulos e os usuários.')),
+      tabela(['Nome', 'E-mail', 'Módulos liberados', 'Situação', ''], lista.map((u) => el('tr', null, el('td', null, el('strong', null, u.nome)), el('td', null, u.email),
+        el('td', null, chipsAcesso(u, acessos)),
         el('td', null, el('span', { class: 'etiqueta ' + (u.ativo ? 'etiqueta-ativo' : 'etiqueta-desativado') }, u.ativo ? 'Ativo' : 'Desativado')),
-        el('td', { class: 'acoes' }, u.id === estado.usuario.id ? el('span', { class: 'ajuda' }, 'você') : el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: () => formUsuario(u) }, 'Editar'))))));
+        el('td', { class: 'acoes' }, u.id === estado.usuario.id ? el('span', { class: 'ajuda' }, 'você') : el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: () => formUsuario(u, acessos) }, 'Editar'))))));
     paginarTudo(c);
   };
-  function formUsuario(u) {
+  function formUsuario(u, acessos) {
     u = u || {};
+    const novo = !u.id;
     const f = { nome: txt(u.nome, { maxlength: 120 }), email: txt(u.email, { type: 'email', maxlength: 120, disabled: u.id ? true : null }), senha: txt('', { maxlength: 60 }),
+      admin: el('input', { type: 'checkbox', checked: u.perfil === 'administrador' }),
       perfil: sel(Object.entries(NOME_PERFIL), u.perfil || 'operador'), ativo: el('input', { type: 'checkbox', checked: u.ativo !== false }) };
+    // Um seletor por módulo: Sem acesso / Consulta / Operador / Administrador do módulo
+    const atuais = {};
+    if (acessos) for (const a of acessos) if (a.usuario_id === u.id) atuais[a.modulo_id] = a.perfil;
+    const OPCOES = [['', 'Sem acesso'], ['consulta', 'Consulta'], ['operador', 'Operador'], ['administrador', 'Administrador do módulo']];
+    const seletores = MODULOS_COM_PERFIL().map((m) => {
+      const s = sel(OPCOES, novo ? '' : (atuais[m.id] || ''), { id: 'fu-mod-' + m.id, 'aria-describedby': 'fu-mod-' + m.id + '-desc' });
+      return { m, s, linha: el('div', { class: 'linha-acesso', style: '--g:' + m.cor },
+        el('span', { class: 'icone-modulo icone-modulo-p' }, M.icone(m.id, 20)),
+        el('div', { class: 'linha-acesso-texto' }, el('label', { for: 'fu-mod-' + m.id }, m.nome), el('span', { class: 'ajuda', id: 'fu-mod-' + m.id + '-desc' }, m.descricao)), s) };
+    });
+    const caixaModulos = el('fieldset', { class: 'caixa-acessos' }, el('legend', null, 'Módulos que a pessoa vê'), seletores.map((x) => x.linha),
+      el('p', { class: 'ajuda aviso-admin', hidden: true }, 'Administrador do sistema vê todos os módulos como administrador. Os acessos abaixo ficam guardados caso ele deixe de ser administrador.'));
+    const sincronizar = () => { caixaModulos.classList.toggle('desligada', f.admin.checked); caixaModulos.querySelector('.aviso-admin').hidden = !f.admin.checked; };
+    f.admin.addEventListener('change', sincronizar); sincronizar();
     const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar');
-    const d = abrirDialogo(u.id ? 'Editar usuário' : 'Novo usuário', el('div', null,
+    const d = abrirDialogo(novo ? 'Novo usuário' : 'Editar usuário', el('div', null,
       campo('fu-nome', 'Nome', f.nome, null, true), campo('fu-email', 'E-mail', f.email, u.id ? 'O e-mail não muda por aqui.' : null, true),
-      u.id ? null : campo('fu-senha', 'Senha inicial', f.senha, 'A pessoa troca no primeiro acesso.', true), campo('fu-perfil', 'Perfil', f.perfil),
+      novo ? campo('fu-senha', 'Senha inicial', f.senha, 'A pessoa troca no primeiro acesso.', true) : null,
+      acessos
+        ? [el('label', { class: 'checkbox caixa-admin' }, f.admin, el('span', null, el('strong', null, 'Administrador do sistema'), el('br'), el('span', { class: 'ajuda' }, 'Vê todos os módulos e cria usuários e acessos.'))), caixaModulos]
+        : [campo('fu-perfil', 'Perfil (Controle de Adesões)', f.perfil, 'Rode o script 10 na Supabase para liberar o acesso por módulo.')],
       u.id ? el('label', { class: 'checkbox' }, f.ativo, ' Acesso ativo (quem já entrou é desativado, nunca apagado)') : null),
       [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), btn]);
     btn.addEventListener('click', async () => {
       if (!marcarErro(f.nome, f.nome.value.trim() ? '' : 'Informe o nome.')) return;
-      if (!u.id && !marcarErro(f.email, /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.value.trim()) ? '' : 'E-mail inválido.')) return;
-      if (!u.id && !marcarErro(f.senha, f.senha.value.length >= 8 ? '' : 'Pelo menos 8 caracteres.')) return;
+      if (novo && !marcarErro(f.email, /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.value.trim()) ? '' : 'E-mail inválido.')) return;
+      if (novo && !marcarErro(f.senha, f.senha.value.length >= 8 ? '' : 'Pelo menos 8 caracteres.')) return;
+      const lista = seletores.filter((x) => x.s.value).map((x) => ({ modulo: x.m.id, perfil: x.s.value }));
+      if (acessos && !f.admin.checked && !lista.length && !(await confirmar('Nenhum módulo liberado', 'A pessoa vai entrar, mas não vai ver nenhum módulo. Salvar assim mesmo?', 'Salvar assim mesmo'))) return;
+      // Perfil geral: administrador do sistema ou usuário comum. Sem o script 10, vale o perfil antigo.
+      const perfil = acessos ? (f.admin.checked ? 'administrador' : (u.perfil && u.perfil !== 'administrador' ? u.perfil : 'operador')) : f.perfil.value;
       ocupado(btn, 'Salvando…');
       try {
-        if (u.id) await D.salvarUsuario({ id: u.id, nome: f.nome.value.trim(), perfil: f.perfil.value, ativo: f.ativo.checked });
-        else await D.criarUsuario({ nome: f.nome.value.trim(), email: f.email.value.trim().toLowerCase(), senha: f.senha.value, perfil: f.perfil.value });
+        let id = u.id;
+        if (!novo) await D.salvarUsuario({ id, nome: f.nome.value.trim(), perfil, ativo: f.ativo.checked });
+        else { const r = await D.criarUsuario({ nome: f.nome.value.trim(), email: f.email.value.trim().toLowerCase(), senha: f.senha.value, perfil }); id = r && r.id; }
+        if (acessos && id) await D.salvarAcessos(id, lista);
         d.close(); toast('Usuário salvo.'); rotear();
       } catch (e) { toast(e.message, true); ocupado(btn); }
     });

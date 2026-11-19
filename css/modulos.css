@@ -1,0 +1,114 @@
+/* =========================================================
+   SOFT+ Consórcios · tela principal (módulos) e acessos por módulo
+   Padrão SOFT+: marinho calculado da cor da marca, verde nos detalhes.
+   ========================================================= */
+:root {
+  --navy: color-mix(in srgb, var(--brand) 42%, #061629);
+  --navy-2: color-mix(in srgb, var(--brand) 58%, #061629);
+  --acento: #0a9668;
+}
+
+/* ---------- Estrutura ---------- */
+.tela-modulos { min-height: 100vh; display: flex; flex-direction: column; background: var(--ink); }
+.limite-modulos { max-width: 1180px; width: 100%; margin: 0 auto; padding: 0 24px; }
+.topo-modulos { background: #fff; border-bottom: 1px solid var(--line); }
+.topo-modulos-linha { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 68px; }
+.topo-modulos .marca-nome { color: var(--navy); font-size: 19px; }
+.topo-modulos .marca-icone { border-radius: 12px; }
+.topo-modulos-acoes { display: flex; align-items: center; gap: 8px; }
+.conteudo-modulos { flex: 1; padding-top: 28px; padding-bottom: 48px; outline: none; }
+.rodape-modulos { border-top: 1px solid var(--line); background: #fff; color: var(--text-dim); font-size: 13px; padding: 14px 0; font-family: var(--fonte-num); }
+
+/* ---------- Faixa de boas-vindas (marinho com círculo decorativo) ---------- */
+.faixa-modulos { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: space-between; gap: 24px;
+  color: #fff; border-radius: 20px; padding: 28px 32px; background: linear-gradient(115deg, var(--navy) 0%, var(--navy-2) 100%);
+  box-shadow: 0 12px 28px rgba(6, 22, 41, .12); }
+.faixa-modulos::after { content: ""; position: absolute; right: 120px; top: -80px; width: 240px; height: 240px; border-radius: 50%;
+  border: 30px solid rgba(255, 255, 255, .05); pointer-events: none; }
+.faixa-modulos-texto { position: relative; z-index: 1; min-width: 0; }
+.rotulo-faixa { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #bfe9d8; margin-bottom: 8px; }
+.rotulo-faixa::before { content: ""; display: inline-block; width: 22px; height: 3px; border-radius: 99px; background: var(--acento); vertical-align: middle; margin-right: 8px; }
+.faixa-modulos h1 { font-size: clamp(26px, 3.2vw, 34px); letter-spacing: -.02em; margin: 0 0 6px; }
+.faixa-modulos p { margin: 0; color: #d6e3f3; max-width: 640px; }
+.faixa-modulos-logo { position: relative; z-index: 1; flex: none; width: 150px; height: auto; background: #fff; border-radius: 16px; padding: 10px 14px;
+  box-shadow: 0 8px 20px rgba(6, 22, 41, .2); }
+
+/* ---------- Grade de módulos ---------- */
+.secao-modulos { margin-top: 34px; }
+.secao-modulos h2 { font-size: 24px; color: var(--navy); }
+.secao-modulos h2::before { content: ""; display: block; width: 34px; height: 4px; margin: 0 0 12px; border-radius: 99px; background: var(--acento); }
+.secao-modulos .sub { margin-top: 4px; }
+.grade-modulos { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 18px; }
+
+.cartao-modulo { --g: #1d5fd1; position: relative; display: flex; flex-direction: column; gap: 12px; background: #fff; border: 1px solid #e3eaf1;
+  border-radius: 18px; padding: 22px; box-shadow: 0 6px 18px rgba(12, 38, 64, .05); transition: transform .18s, box-shadow .18s, border-color .18s; }
+.cartao-modulo:hover, .cartao-modulo:focus-within { transform: translateY(-3px); box-shadow: 0 16px 32px rgba(15, 39, 64, .12);
+  border-color: color-mix(in srgb, var(--g) 35%, #e3eaf1); }
+.cartao-modulo-link { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; text-decoration: none; color: var(--text); }
+/* O cartão inteiro é clicável pelo link do nome (o foco fica no link). */
+.cartao-modulo-link::after { content: ""; position: absolute; inset: 0; border-radius: 18px; }
+.cartao-modulo-link:focus-visible { outline: none; }
+.cartao-modulo-link:focus-visible::after { outline: 3px solid #f2b33d; outline-offset: 2px; }
+.cartao-modulo-nome { font-family: var(--fonte-titulo); font-size: 21px; font-weight: 700; line-height: 1.2; color: var(--navy); }
+.cartao-modulo-desc { margin: 0; color: var(--text-dim); font-size: 14px; }
+.cartao-modulo-pend { position: relative; z-index: 1; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cartao-modulo-pend a { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; color: #6b4807; background: #fdf3e1; border: 1px solid #f0d49a;
+  border-radius: 99px; padding: 3px 10px; text-decoration: none; }
+.cartao-modulo-pend a:hover { background: #fbe7c2; }
+.cartao-modulo-pend strong { font-family: var(--fonte-num); }
+.cartao-modulo-rodape { margin-top: auto; padding-top: 12px; border-top: 1px solid #eef2f6; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cartao-modulo-resumo { font-size: 13px; color: var(--text-dim); }
+
+/* Ícone do módulo: quadrado arredondado na cor do módulo, como ícone de aplicativo */
+.icone-modulo { position: relative; flex: none; width: 64px; height: 64px; border-radius: 18px; display: grid; place-items: center; color: #fff;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--g) 82%, #fff) 0%, var(--g) 55%, color-mix(in srgb, var(--g) 70%, #061629) 100%);
+  box-shadow: 0 10px 20px color-mix(in srgb, var(--g) 30%, transparent), inset 0 1px 0 rgba(255, 255, 255, .35); }
+.icone-modulo-qtd { position: absolute; top: -7px; right: -9px; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 99px; display: grid; place-items: center;
+  background: #f2b33d; color: #0f2947; font: 700 12px/1 var(--fonte-num); border: 2px solid #fff; }
+.icone-modulo-p { width: 40px; height: 40px; border-radius: 12px; box-shadow: none; }
+
+.modulos-vazio { grid-column: 1 / -1; background: #fff; border: 1px dashed #c9d7e6; border-radius: 18px; padding: 28px; }
+.modulos-vazio h2 { font-size: 20px; margin-bottom: 6px; }
+.modulos-vazio p { margin: 0; color: var(--text-dim); }
+
+/* ---------- Menu lateral: volta aos módulos e nome do módulo ---------- */
+.menu a.menu-voltar { display: flex; align-items: center; gap: 6px; color: #8ea6c2; font-size: 13px; font-weight: 600; }
+.menu a.menu-voltar:hover { color: #fff; }
+.menu-modulo { --g: #1d5fd1; display: flex; align-items: center; gap: 10px; margin: 8px 0 6px; padding: 10px; border-radius: 10px;
+  background: rgba(255, 255, 255, .06); color: #fff; font-weight: 700; font-size: 14px; line-height: 1.25; }
+.menu-modulo-icone { flex: none; width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: var(--g); color: #fff; }
+
+/* ---------- Usuários e acessos ---------- */
+.legenda-perfis { font-size: 13.5px; color: var(--text-dim); background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin: 0 0 14px; }
+.legenda-perfis b { color: var(--text); }
+.etiqueta-admin { background: #e8eefb; color: #0a3d99; }
+.chips-modulos { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-modulo { --g: #1d5fd1; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; padding: 2px 10px 2px 3px; border-radius: 99px;
+  background: color-mix(in srgb, var(--g) 10%, #fff); color: color-mix(in srgb, var(--g) 75%, #061629); }
+.chip-modulo-icone { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--g); color: #fff; }
+.caixa-admin { display: flex; align-items: flex-start; gap: 10px; background: #f4f8fd; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 4px 0 14px; }
+.caixa-admin input { margin-top: 4px; }
+.caixa-acessos { border: 1px solid var(--line); border-radius: 12px; padding: 6px 14px 12px; margin: 0 0 14px; }
+.caixa-acessos legend { font-weight: 700; font-size: 14px; padding: 0 6px; }
+.caixa-acessos.desligada .linha-acesso { opacity: .5; }
+.linha-acesso { --g: #1d5fd1; display: grid; grid-template-columns: auto 1fr minmax(170px, 210px); align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #eef2f6; }
+.linha-acesso:last-of-type { border-bottom: 0; }
+.linha-acesso-texto { display: flex; flex-direction: column; min-width: 0; }
+.linha-acesso-texto label { font-weight: 700; }
+.linha-acesso-texto .ajuda { font-size: 12.5px; }
+.linha-acesso select { height: 42px; border: 1px solid var(--line); border-radius: var(--raio); padding: 0 10px; font: inherit; background: #fff; color: var(--text); }
+
+/* ---------- Celular ---------- */
+@media (max-width: 760px) {
+  .limite-modulos { padding-left: 18px; padding-right: 18px; }
+  .conteudo-modulos { padding-top: 20px; }
+  .topo-modulos .marca-nome { font-size: 16px; white-space: nowrap; }
+  .topo-modulos .marca-icone { width: 36px; height: 36px; }
+  .faixa-modulos { flex-direction: column-reverse; align-items: flex-start; padding: 22px; }
+  .faixa-modulos-logo { width: 110px; }
+  .linha-acesso { grid-template-columns: auto 1fr; }
+  .linha-acesso select { grid-column: 1 / -1; }
+}
+@media (max-width: 480px) { #topo-usuario-modulos { display: none; } }
+@media (prefers-reduced-motion: reduce) { .cartao-modulo { transition: none; } .cartao-modulo:hover { transform: none; } }
+@media print { .topo-modulos, .rodape-modulos { display: none; } }
