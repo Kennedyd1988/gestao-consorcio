@@ -79,6 +79,7 @@
         const r = await fetch('https://publica.cnpj.ws/cnpj/' + cnpj);
         if (r.ok) { const x = await r.json(), e = x.estabelecimento || {};
           j = { razao_social: x.razao_social, natureza_juridica: x.natureza_juridica && x.natureza_juridica.descricao, municipio: e.cidade && e.cidade.nome, uf: e.estado && e.estado.sigla,
+            descricao_tipo_de_logradouro: e.tipo_logradouro, logradouro: e.logradouro, numero: e.numero, complemento: e.complemento, bairro: e.bairro, cep: e.cep,
             email: e.email, ddd_telefone_1: (e.ddd1 || '') + (e.telefone1 || ''), descricao_situacao_cadastral: e.situacao_cadastral }; }
       } catch (e) {}
     }
@@ -89,7 +90,9 @@
     const ehMunicipio = /^munic[ií]pio\b/i.test(nat) || /^munic[ií]pio de\b/i.test(j.razao_social);
     return { nome: ehMunicipio && mun ? 'Município de ' + mun + '/' + uf : tituloPt(j.razao_social), municipio: mun, uf, esfera,
       email: String(j.email || '').toLowerCase() || '', telefone: formatarTelefone(String(j.ddd_telefone_1 || '').replace(/\D/g, '').slice(0, 11)),
-      situacao: String(j.descricao_situacao_cadastral || '') };
+      situacao: String(j.descricao_situacao_cadastral || ''),
+      endereco: tituloPt([[j.descricao_tipo_de_logradouro, j.logradouro].filter(Boolean).join(' '), j.numero, j.complemento].filter((x) => x && String(x).trim()).join(', ')),
+      bairro: tituloPt(j.bairro), cep: String(j.cep || '').replace(/\D/g, '').replace(/^(\d{5})(\d{3})$/, '$1-$2') };
   }
   function ocupado(btn, texto) {
     if (texto) { btn.dataset.orig = btn.textContent; btn.textContent = texto; btn.disabled = true; }
@@ -192,6 +195,7 @@
   const perfilEm = (modulo) => (estado.acessos || {})[modulo] || null;
   const podeEditar = () => ['administrador', 'operador'].includes(perfilEm('adesoes'));
   const eAdmin = () => perfilEm('adesoes') === 'administrador';
+  const podeEditarCadastro = () => ['administrador', 'operador'].includes(perfilEm('consorciados'));
   const eAdminSistema = () => !!(estado.usuario && estado.usuario.perfil === 'administrador');
   const NOME_PERFIL = M.NOME_PERFIL;
   const SIT = { autorizado: ['Autorizado', 'etiqueta-autorizado'], parcial: ['Autorizado em parte', 'etiqueta-parcial'], negado: ['Negado', 'etiqueta-negado'], cancelado: ['Cancelado', 'etiqueta-cancelado'] };
@@ -265,6 +269,9 @@
     return baixar(O.nomeArquivo(dados), blob);
   }
   async function recarregar() { estado.base = await D.carregar(); atualizarContadores(); }
+  // Cadastro de Consorciados: base própria. Mudou o cadastro, as Adesões recarregam ao abrir.
+  async function recarregarCadastro() { estado.cad = await D.carregarCadastro(); }
+  function cadastroMudou() { estado.cad = null; estado.base = null; }
 
   // ---------------------------------------------------------------- login
   for (const b of document.querySelectorAll('.btn-ver-senha')) b.addEventListener('click', () => {
@@ -294,7 +301,7 @@
     catch (e) { msg('nova-msg', e.message); } finally { ocupado(btn); }
   });
   async function sair() {
-    await D.sair(); Object.assign(estado, { usuario: null, acessos: null, base: null, modulo: null, logado: false });
+    await D.sair(); Object.assign(estado, { usuario: null, acessos: null, base: null, cad: null, modulo: null, logado: false });
     history.replaceState(null, '', location.pathname + location.search);
     mostrarTela('tela-login'); $('form-login').hidden = false; $('form-nova-senha').hidden = true;
   }
@@ -319,8 +326,11 @@
   const MENUS = {
     adesoes: [
       ['Adesões', [['solicitacoes', 'Solicitações recebidas'], ['novo', 'Novo pedido de adesão', () => podeEditar()], ['pedidos', 'Pedidos e ofícios'], ['relatorio', 'Relatório em PDF']]],
-      ['Cadastros', [['atas', 'Atas de registro de preços'], ['orgaos', 'Órgãos aderentes'], ['pncp', 'Atualizações do PNCP', () => podeEditar()]]],
+      ['Cadastros', [['atas', 'Atas de registro de preços'], ['pncp', 'Atualizações do PNCP', () => podeEditar()]]],
       ['Módulo', [['importar', 'Importar planilha', () => podeEditar()], ['configuracoes', 'Configurações do ofício', () => eAdmin()]]],
+    ],
+    consorciados: [
+      ['Cadastro', [['entes', 'Entes e consorciados'], ['pessoas', 'Pessoas do CIMOP']]],
     ],
     sistema: [
       ['Sistema', [['usuarios', 'Usuários e acessos']]],
@@ -362,7 +372,7 @@
   function rotear() {
     const h = (location.hash || '#inicio').slice(1);
     const [rota, ...resto] = h.split('-'); const id = resto.join('-');
-    const destaque = { pedido: 'pedidos', ata: 'atas', item: 'atas', solicitacao: 'solicitacoes' }[rota] || rota;
+    const destaque = { pedido: 'pedidos', ata: 'atas', item: 'atas', solicitacao: 'solicitacoes', ente: 'entes', orgaos: 'entes' }[rota] || rota;
     for (const a of $('menu').querySelectorAll('a')) a.dataset.rota === destaque ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
     const c = $('conteudo');
     const tela = TELAS[rota] || TELAS.inicio;
@@ -388,6 +398,10 @@
     if (mod.id === 'adesoes' && !estado.base) {
       mostrarTela('tela-carregando'); $('carregando-texto').textContent = 'Carregando atas e pedidos…';
       try { await recarregar(); } catch (e) { mostrarTela('tela-modulos'); toast(e.message, true); return; }
+    }
+    if (mod.id === 'consorciados' && !estado.cad) {
+      mostrarTela('tela-carregando'); $('carregando-texto').textContent = 'Carregando o cadastro dos entes…';
+      try { await recarregarCadastro(); } catch (e) { mostrarTela('tela-modulos'); toast(e.message, true); return; }
     }
     if (estado.modulo !== mod.id) {
       estado.modulo = mod.id;
@@ -444,6 +458,12 @@
   // ================================================================= TELA PRINCIPAL (módulos)
   // Um ícone por módulo liberado. Os números de pendências vêm dos próprios módulos (integração).
   const PENDENCIAS = {
+    consorciados: () => {
+      const lista = (estado.cad && estado.cad.orgaos) || (estado.base && estado.base.orgaos); if (!lista) return null;
+      const pend = lista.filter((o) => o.pendente).length;
+      const cons = lista.filter((o) => o.vinculo === 'consorciado' && o.situacao_consorcio !== 'excluido' && o.situacao_consorcio !== 'retirado').length;
+      return { resumo: cons + (cons === 1 ? ' consorciado' : ' consorciados') + ' · ' + lista.length + ' entes', itens: pend ? [[pend, pend === 1 ? 'ente pendente de confirmação' : 'entes pendentes de confirmação', '#entes-pendentes']] : [] };
+    },
     adesoes: () => {
       const b = estado.base; if (!b) return null;
       const sol = b.solicitacoes.filter((x) => x.situacao === 'recebida' || x.situacao === 'em_analise').length;
@@ -484,6 +504,10 @@
           pend ? el('span', { class: 'cartao-modulo-resumo' }, pend.resumo) : null));
     }));
     // Carrega os dados do módulo de adesões em segundo plano para mostrar as pendências (e abrir o módulo sem espera).
+    if (perfilEm('consorciados') && !estado.cad && !estado.carregandoCad) {
+      estado.carregandoCad = true;
+      recarregarCadastro().then(() => { if (!$('tela-modulos').hidden) telaModulos(); }).catch(() => {}).finally(() => { estado.carregandoCad = false; });
+    }
     if (perfilEm('adesoes') && !estado.base && !estado.carregandoBase) {
       estado.carregandoBase = true;
       recarregar().then(() => { if (!$('tela-modulos').hidden) telaModulos(); }).catch(() => {}).finally(() => { estado.carregandoBase = false; });
@@ -559,7 +583,8 @@
         el('dl', { class: 'dados' }, el('dt', null, 'CNPJ'), el('dd', null, o.cnpj ? O.formatarCnpj(o.cnpj) : '—'), el('dt', null, 'Destinatário'), el('dd', null, [o.tratamento, o.responsavel].filter(Boolean).join(' ') || '—'),
           el('dt', null, 'Cargo'), el('dd', null, o.cargo || '—'), el('dt', null, 'E-mail'), el('dd', null, o.email || '—'), el('dt', null, 'Esfera'), el('dd', null, o.esfera)),
         falta.length ? el('p', { class: 'msg msg-falta mt-05' }, 'Falta ' + falta.join(', ') + ' deste órgão para o ofício sair completo. ') : null,
-        el('button', { type: 'button', class: 'link', onclick: () => formOrgao(o, () => { desenharFicha(); atualizar(); }) }, 'Editar dados do órgão')));
+        podeEditarCadastro() ? el('button', { type: 'button', class: 'link', onclick: () => formOrgao(o, () => { desenharFicha(); atualizar(); }) }, 'Corrigir no Cadastro')
+          : el('p', { class: 'ajuda' }, 'Os dados do ente são corrigidos no Cadastro de Consorciados.')));
     };
     selOrg.addEventListener('change', () => { r.orgao_id = selOrg.value; desenharFicha(); atualizar(); });
 
@@ -724,7 +749,7 @@
       el('div', { class: 'grade grade-2' },
         el('section', { class: 'cartao' }, el('h2', null, 'Solicitante'),
           campo('np-orgao', 'Órgão ou entidade', selOrg, 'O limite de 50% é por CNPJ. Fundo, autarquia ou Câmara com CNPJ próprio é outro órgão.', true), ficha,
-          el('button', { type: 'button', class: 'btn btn-claro', onclick: () => formOrgao({}, (o) => { r.orgao_id = o.id; rotear(); }) }, '+ Cadastrar órgão novo')),
+          el('button', { type: 'button', class: 'btn btn-claro', onclick: () => formOrgao({}, (o) => { r.orgao_id = o.id; rotear(); }) }, podeEditarCadastro() ? '+ Incluir ente no Cadastro' : '+ Incluir ente (fica pendente no Cadastro)')),
         el('section', { class: 'cartao' }, el('h2', null, 'Ofício'),
           el('div', { class: 'grade-campos' }, el('div', { class: 'campo' }, el('label', { for: 'np-num' }, 'Nº do ofício do CIMOP', el('span', { class: 'obrigatorio' }, ' *')), (fNum.id = 'np-num', fNum), avisoNum, el('span', { class: 'erro-campo', id: 'np-num-erro' })),
             campo('np-data', 'Data do ofício', fData, null, true)),
@@ -888,7 +913,7 @@
         el('section', { class: 'cartao' }, el('h2', null, 'Destinatário'),
           el('dl', { class: 'dados' }, el('dt', null, 'Órgão'), el('dd', null, o.nome), el('dt', null, 'CNPJ'), el('dd', null, o.cnpj ? O.formatarCnpj(o.cnpj) : '—'),
             el('dt', null, 'Responsável'), el('dd', null, o.responsavel || '—'), el('dt', null, 'Cargo'), el('dd', null, o.cargo || '—'), el('dt', null, 'E-mail'), el('dd', null, o.email || '—')),
-          podeEditar() ? el('button', { type: 'button', class: 'link', onclick: () => formOrgao(o, () => rotear()) }, 'Editar órgão') : null)),
+          podeEditarCadastro() ? el('button', { type: 'button', class: 'link', onclick: () => formOrgao(o, () => rotear()) }, 'Corrigir no Cadastro') : null)),
       el('section', { class: 'cartao' }, el('h2', null, 'Itens'),
         tabela(['ARP', 'Item', 'Descrição', 'Und.', 'Qtd solicitada', 'Qtd autorizada', 'Preço unit. (R$)', 'Valor (R$)', 'Decisão'], ls.map((l) => el('tr', { class: 'lin-' + l.decisao },
           el('td', null, l.ata.numero), el('td', { class: 'num' }, l.item.numero), el('td', { class: 'desc' }, l.item.descricao), el('td', null, l.item.unidade || ''),
@@ -1718,7 +1743,7 @@
       let org = b.orgaos.find((o) => o.cnpj === x.cnpj);
       const temTelefone = D.modo === 'demo' || b.orgaos.some((o) => 'telefone' in o);   // coluna criada pelo script 05
       if (!org) {
-        org = await D.salvar('orgaos', { nome: x.orgao_nome, cnpj: x.cnpj, municipio: x.municipio || null, uf: x.uf || null, esfera: x.esfera || 'Municipal',
+        org = await D.salvar('orgaos', { pendente: true, pendente_origem: 'Formulário de adesão (protocolo ' + x.protocolo + ')', nome: x.orgao_nome, cnpj: x.cnpj, municipio: x.municipio || null, uf: x.uf || null, esfera: x.esfera || 'Municipal',
           tratamento: 'Ao Senhor', responsavel: x.responsavel || null, cargo: x.cargo || null, email: x.email || null, ...(temTelefone && x.telefone ? { telefone: x.telefone } : {}), ativo: true });
       } else {
         const falta = {};
@@ -1920,32 +1945,6 @@
   }
 
   // ================================================================= ÓRGÃOS
-  TELAS.orgaos = (c) => {
-    const b = estado.base;
-    const busca = el('input', { type: 'search', placeholder: 'Buscar por nome, CNPJ ou município', 'aria-label': 'Buscar órgão' });
-    const lista = el('div');
-    const qtdAdesoes = (o) => b.pedidos.filter((p) => p.orgao_id === o.id && p.situacao !== 'cancelado').length;
-    const filtrar = () => {
-      const t = normalizar(busca.value);
-      const res = b.orgaos.filter((o) => !t || normalizar(o.nome + ' ' + (o.cnpj || '') + ' ' + (o.municipio || '') + ' ' + (o.uf || '')).includes(t));
-      rc(lista, res.length ? tabela(['Órgão', 'CNPJ', 'UF', 'Esfera', 'Destinatário do ofício', 'Pedidos', ''], res.map((o) => {
-        const falta = !o.cnpj || !o.responsavel;
-        return el('tr', null, el('td', null, el('strong', null, o.nome), o.ativo === false ? el('span', { class: 'etiqueta etiqueta-inativo ml-1' }, 'Inativo') : null),
-          el('td', { class: 'num' }, o.cnpj ? O.formatarCnpj(o.cnpj) : el('span', { class: 'falta-leve' }, 'falta')), el('td', null, o.uf || ''), el('td', null, o.esfera),
-          el('td', null, o.responsavel || el('span', { class: 'falta-leve' }, 'falta'), o.cargo ? el('span', { class: 'sub-linha' }, o.cargo) : null),
-          el('td', { class: 'num' }, qtdAdesoes(o)),
-          el('td', { class: 'acoes' }, podeEditar() ? el('button', { type: 'button', class: 'btn ' + (falta ? 'btn-primario' : 'btn-claro') + ' btn-p', onclick: () => formOrgao(o, () => rotear()) }, falta ? 'Completar' : 'Editar') : null));
-      })) : el('p', { class: 'vazio' }, 'Nenhum órgão encontrado.'));
-      paginarTudo(lista);
-    };
-    busca.addEventListener('input', filtrar);
-    const incompletos = b.orgaos.filter((o) => !o.cnpj || !o.responsavel).length;
-    rc(c, cabecalho('Órgãos aderentes', b.orgaos.length + ' órgão(s). O limite de 50% é controlado por CNPJ.', podeEditar() ? el('button', { type: 'button', class: 'btn btn-primario', onclick: () => formOrgao({}, () => rotear()) }, '+ Novo órgão') : null),
-      incompletos ? el('p', { class: 'msg msg-falta' }, incompletos + ' órgão(s) sem CNPJ ou destinatário. Complete para o ofício sair com esses dados.') : null,
-      el('div', { class: 'filtros' }, busca), lista);
-    filtrar();
-  };
-
   function formOrgao(o, depois) {
     const f = { nome: txt(o.nome, { placeholder: 'Município de …/RN', maxlength: 160 }), cnpj: txt(o.cnpj ? O.formatarCnpj(o.cnpj) : '', { inputmode: 'numeric', maxlength: 18, placeholder: '00.000.000/0000-00' }),
       municipio: txt(o.municipio, { maxlength: 80 }), uf: sel(UFS.map((u) => [u, u]), o.uf || 'RN'),
@@ -1969,7 +1968,8 @@
     };
     if (!o.id) f.cnpj.addEventListener('input', () => { if (f.cnpj.value.replace(/\D/g, '').length === 14 && !f.nome.value.trim()) buscarRf(); });
     const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar');
-    const d = abrirDialogo(o.id ? 'Editar órgão' : 'Novo órgão', el('div', null,
+    const d = abrirDialogo(o.id ? 'Corrigir dados do ente' : 'Novo ente', el('div', null,
+      !o.id && !podeEditarCadastro() ? el('p', { class: 'msg msg-info' }, 'O ente entra no Cadastro de Consorciados como pendente de confirmação. Quem cuida do Cadastro confere e completa os dados.') : null,
       campo('fo-nome', 'Nome (como sai no ofício)', f.nome, 'Ex.: Município de Riacho da Cruz/RN · Fundo Municipal de Saúde de …', true),
       el('div', { class: 'grade-campos' }, campo('fo-cnpj', 'CNPJ', f.cnpj, null, true), campo('fo-esfera', 'Esfera', f.esfera, 'Federal: adesão vedada (art. 86, § 8º).')),
       el('div', null, el('button', { type: 'button', class: 'link', onclick: buscarRf }, 'Buscar dados na Receita Federal'), avisoRf),
@@ -1983,7 +1983,7 @@
     btn.addEventListener('click', async () => {
       if (!marcarErro(f.nome, f.nome.value.trim() ? '' : 'Informe o nome.')) return;
       const cnpj = f.cnpj.value.replace(/\D/g, '');
-      const dup = cnpj && estado.base.orgaos.find((x) => x.cnpj === cnpj && x.id !== o.id);
+      const dup = cnpj && ((estado.base || estado.cad || {}).orgaos || []).find((x) => x.cnpj === cnpj && x.id !== o.id);
       if (!marcarErro(f.cnpj, cnpj.length !== 14 ? 'CNPJ com 14 números.' : dup ? 'Esse CNPJ já é de ' + dup.nome + '.' : '')) return;
       if (!marcarErro(f.email, f.email.value.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.value.trim()) ? 'E-mail inválido.' : '')) return;
       if (!marcarErro(f.telefone, telefoneValido(f.telefone.value) ? '' : 'Telefone incompleto: DDD e número.')) return;
@@ -1991,8 +1991,12 @@
       try {
         const s = await D.salvar('orgaos', { ...(o.id ? { id: o.id } : {}), nome: f.nome.value.trim(), cnpj, municipio: f.municipio.value.trim() || null, uf: f.uf.value, esfera: f.esfera.value,
           tratamento: f.tratamento.value, responsavel: f.responsavel.value.trim() || null, cargo: f.cargo.value.trim() || null, vocativo: f.vocativo.value.trim() || null,
-          email: f.email.value.trim() || null, ...(f.telefone.value || o.telefone ? { telefone: f.telefone.value || null } : {}), ativo: f.ativo.checked });
-        await recarregar(); d.close(); toast('Órgão salvo.'); depois && depois(estado.base.orgaosPorId[s.id] || s);
+          email: f.email.value.trim() || null, ...(f.telefone.value || o.telefone ? { telefone: f.telefone.value || null } : {}), ativo: f.ativo.checked,
+          ...(!o.id ? { pendente: !podeEditarCadastro(), pendente_origem: podeEditarCadastro() ? null : 'Controle de Adesões (lançamento de pedido)' } : {}) });
+        if (estado.modulo === 'adesoes') await recarregar(); else estado.base = null;
+        if (estado.modulo === 'consorciados') await recarregarCadastro(); else estado.cad = null;
+        d.close(); toast(o.id ? 'Dados do ente salvos.' : podeEditarCadastro() ? 'Ente incluído no Cadastro.' : 'Ente incluído. Ele fica pendente de confirmação no Cadastro.');
+        depois && depois((estado.base && estado.base.orgaosPorId[s.id]) || s);
       } catch (e) { toast(e.message, true); ocupado(btn); }
     });
   }
@@ -2059,7 +2063,7 @@
   TELAS.configuracoes = (c) => {
     if (!eAdmin()) { rc(c, cabecalho('Acesso não permitido')); return; }
     const cf = estado.base.config;
-    const f = { orgao_nome: txt(cf.orgao_nome), sigla: txt(cf.sigla, { maxlength: 20 }), cidade_uf: txt(cf.cidade_uf), presidente_nome: txt(cf.presidente_nome), presidente_cargo: txt(cf.presidente_cargo),
+    const f = { orgao_nome: txt(cf.orgao_nome), sigla: txt(cf.sigla, { maxlength: 20 }), cidade_uf: txt(cf.cidade_uf), presidente_nome: txt(cf.presidente_nome, cf._presidenteCadastro ? { readonly: true } : null), presidente_cargo: txt(cf.presidente_cargo),
       resolucao_srp: txt(cf.resolucao_srp), resolucao_alteracao: txt(cf.resolucao_alteracao), texto_anexos: area(cf.texto_anexos, { rows: 3 }) };
     const btn = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar');
     btn.addEventListener('click', async () => {
@@ -2069,7 +2073,7 @@
     });
     rc(c, cabecalho('Configurações do ofício', 'Dados fixos que entram em todos os ofícios. O timbre e o rodapé são os do Ofício nº 105/2026.'),
       el('section', { class: 'cartao' }, el('h2', null, 'Assinatura e local'),
-        el('div', { class: 'grade-campos' }, campo('cf-pres', 'Presidente', f.presidente_nome, null, true), campo('cf-cargo', 'Cargo na assinatura', f.presidente_cargo, null, true)),
+        el('div', { class: 'grade-campos' }, campo('cf-pres', 'Presidente', f.presidente_nome, cf._presidenteCadastro ? 'Vem do Cadastro de Consorciados › Pessoas do CIMOP (o Presidente ativo). Para trocar, altere lá.' : null, true), campo('cf-cargo', 'Cargo na assinatura', f.presidente_cargo, null, true)),
         el('div', { class: 'grade-campos' }, campo('cf-cidade', 'Local da data', f.cidade_uf, null, true), campo('cf-sigla', 'Sigla no número do ofício', f.sigla, 'OFÍCIO Nº 105/2026 – CIMOP', true)),
         campo('cf-nome', 'Nome do consórcio', f.orgao_nome)),
       el('section', { class: 'cartao' }, el('h2', null, 'Fundamentação'),
@@ -2193,5 +2197,9 @@
     });
   }
 
+  // Núcleo compartilhado com os arquivos dos outros módulos (js/consorciados.js, …)
+  window.NUCLEO = { el, rc, $, estado, D, O, M, toast, msg, marcarErro, campo, txt, area, sel, abrirDialogo, confirmar, abas, tabela, cabecalho, paginarTudo,
+    baixar, ocupado, consultarReceita, formatarTelefone, mascaraTelefone, telefoneValido, tituloPt, normalizar, hoje, diasAte, UFS, XLSX_T,
+    perfilEm, podeEditarCadastro, eAdminSistema, formOrgao, recarregarCadastro, cadastroMudou, rotear: () => rotear(), TELAS, PENDENCIAS };
   window.ADESOES = { iniciar };
 })();

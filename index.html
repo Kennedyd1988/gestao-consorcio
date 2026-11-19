@@ -35,12 +35,12 @@
         window.NOTAS_VERSAO = v.notas || [];
         try { localStorage.setItem('gestao_consorcio_versao', v.versao); } catch (e) {}
         var q = '?v=' + encodeURIComponent(v.versao);
-        ['css/estilos.css', 'css/adesoes.css', 'css/modulos.css'].forEach(function (h, i) {
+        ['css/estilos.css', 'css/adesoes.css', 'css/modulos.css', 'css/consorciados.css'].forEach(function (h, i) {
           var css = document.createElement('link'); css.rel = 'stylesheet'; css.href = h + q;
-          if (i === 2) css.onload = css.onerror = function () { document.documentElement.classList.add('estilo-ok'); };
+          if (i === 3) css.onload = css.onerror = function () { document.documentElement.classList.add('estilo-ok'); };
           document.head.appendChild(css);
         });
-        ['js/config.js', 'js/modulos.js', 'js/regras.js', 'js/modelo-oficio.js', 'js/oficio.js', 'js/planilhas.js', 'js/relatorio.js', 'js/demo-dados.js', 'js/dados.js', 'js/app.js'].reduce(function (ant, arq) {
+        ['js/config.js', 'js/modulos.js', 'js/regras.js', 'js/modelo-oficio.js', 'js/oficio.js', 'js/planilhas.js', 'js/relatorio.js', 'js/demo-dados.js', 'js/dados.js', 'js/app.js', 'js/consorciados.js'].reduce(function (ant, arq) {
           return ant.then(function () {
             return new Promise(function (ok, erro) {
               var s = document.createElement('script'); s.src = arq + q; s.onload = ok; s.onerror = erro; document.body.appendChild(s);

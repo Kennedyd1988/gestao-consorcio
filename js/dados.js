@@ -57,6 +57,12 @@
     return out;
   }
 
+  // O Presidente que assina os ofícios vem das Pessoas do CIMOP (Cadastro), quando houver um ativo.
+  function presidenteDoCadastro(config, pessoas) {
+    const p = (pessoas || []).filter((x) => x.ativo !== false && x.cargo === 'Presidente').sort((a, b) => String(b.inicio || '').localeCompare(String(a.inicio || '')))[0];
+    if (p) { config.presidente_nome = p.nome; config._presidenteCadastro = true; }
+  }
+
   // ===================== DEMONSTRAÇÃO =====================
   function criarDemo() {
     const CHAVE = 'gestao-consorcio-demo-v2';
@@ -86,6 +92,7 @@
         if (!base.pncp) { base.pncp = sementePncp(base); base.pncpCfg = { ultima_execucao: null, ultimo_resultado: null }; }
         if (!base.pncpPartes) base.pncpPartes = sementePartes(base);
       }
+      presidenteDoCadastro(base.config, base.pessoas || []);
       return indexar(base);
     }
     // Usuários de exemplo (só na prévia), para ver os acessos por módulo
@@ -102,13 +109,29 @@
       carregar,
       async reiniciarDemo() { try { localStorage.removeItem(CHAVE); } catch (e) {} base = semente(); return indexar(base); },
       async salvar(tabela, reg) {
-        const lista = base[tabela];
+        const lista = base[tabela] = base[tabela] || [];
+        if (tabela === 'orgao_gestores' && reg.atual !== false) {
+          const g = { ...(lista.find((x) => x.id === reg.id) || {}), ...reg };
+          lista.forEach((x) => { if (x.id !== reg.id && x.orgao_id === g.orgao_id && x.funcao === g.funcao) x.atual = false; });
+          const o = base.orgaos.find((x) => x.id === g.orgao_id);
+          if (o && g.funcao === 'titular') Object.assign(o, { responsavel: g.nome, cargo: g.cargo || o.cargo, tratamento: g.tratamento || o.tratamento, vocativo: g.vocativo || null });
+        }
         if (!reg.id) { reg.id = uid(); lista.push(reg); } else { const i = lista.findIndex((x) => x.id === reg.id); i >= 0 ? (lista[i] = { ...lista[i], ...reg }) : lista.push(reg); }
         if (tabela === 'pedidos' && reg.numero_oficio && lista.some((p) => p.id !== reg.id && p.numero_oficio === reg.numero_oficio)) throw new Error('Já existe um ofício com o número ' + reg.numero_oficio + '.');
         if (tabela === 'periodos') sincronizarVigencia(base, reg.ata_id);
         salvarLocal(); indexar(base); return reg;
       },
       async salvarConfig(c) { base.config = { ...base.config, ...c }; salvarLocal(); },
+      async carregarCadastro() {
+        await carregar();
+        for (const t of ['orgao_leis', 'orgao_gestores', 'orgao_contatos', 'pessoas']) base[t] = base[t] || [];
+        if (!base.pessoas.length) base.pessoas.push({ id: uid(), nome: base.config.presidente_nome, cargo: 'Presidente', ativo: true, assina_documentos: true });
+        return { orgaos: base.orgaos, leis: base.orgao_leis, gestores: base.orgao_gestores, contatos: base.orgao_contatos, pessoas: base.pessoas };
+      },
+      async excluir(tabela, id) { base[tabela] = (base[tabela] || []).filter((x) => x.id !== id); salvarLocal(); },
+      async enviarArquivoCadastro(arquivo) { return URL.createObjectURL(arquivo); },
+      async apagarArquivoCadastro() {},
+      urlCadastro(caminho) { return caminho || null; },
       async importacaoExistente(hash) { return (base.importacoes || []).find((x) => x.hash === hash) || null; },
       async registrarImportacao(r) { base.importacoes = base.importacoes || []; base.importacoes.push({ ...r, id: uid(), criado_em: new Date().toISOString(), criado_por_nome: 'Kennedy Dantas Francelino' }); salvarLocal(); },
       async registrarPedido(p) {
@@ -351,6 +374,8 @@
           tudo('pncp_atualizacoes', 'criado_em').catch(() => null),  // sem o script 04: null
           tudo('pncp_partes', 'ata_id').catch(() => null),           // sem o script 06: null
           tudo('precos', 'vigente_desde').catch(() => null)]);       // sem o script 08: null
+        const pessoas = await tudo('pessoas').catch(() => []);         // sem o script 11: sem pessoas
+        presidenteDoCadastro(config, pessoas);
         return indexar({ config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes, periodos, pncp: pncp || [], pncpAtivo: pncp !== null, pncpPartes: partes || [], partesAtivo: partes !== null, precos: precos || [], precosAtivo: precos !== null });
       },
       async salvar(tabela, reg) {
@@ -358,7 +383,24 @@
         if (id) return ok(await sb.from(tabela).update(resto).eq('id', id).select().single());
         return ok(await sb.from(tabela).insert(resto).select().single());
       },
-      async salvarConfig(c) { const { id, atualizado_em, ...r } = c; ok(await sb.from('configuracoes').update({ ...r, atualizado_em: new Date().toISOString() }).eq('id', 1)); },
+      // ---------- Cadastro de Consorciados (script 11)
+      async carregarCadastro() {
+        const r = await sb.from('orgao_gestores').select('id').limit(1);
+        if (r.error) { const e = new Error('Rode o script 11 na Supabase para ativar o Cadastro de Consorciados.'); e.semScript = true; throw e; }
+        const [orgaos, leis, gestores, contatos, pessoas] = await Promise.all([tudo('orgaos'), tudo('orgao_leis'), tudo('orgao_gestores'), tudo('orgao_contatos'), tudo('pessoas')]);
+        return { orgaos, leis, gestores, contatos, pessoas };
+      },
+      async excluir(tabela, id) { ok(await sb.from(tabela).delete().eq('id', id)); },
+      async enviarArquivoCadastro(arquivo, pasta) {
+        const ext = (arquivo.name.match(/\.(\w+)$/) || [, 'pdf'])[1].toLowerCase();
+        const caminho = pasta + '/' + Date.now() + '-' + uid().slice(0, 8) + '.' + ext;
+        const { error } = await sb.storage.from('consorcio-cadastro').upload(caminho, arquivo, { contentType: arquivo.type || undefined, upsert: false });
+        if (error) throw new Error('Não foi possível enviar o arquivo ' + arquivo.name + ': ' + error.message);
+        return caminho;
+      },
+      async apagarArquivoCadastro(caminho) { if (caminho && !/^(https?|blob|data):/.test(caminho)) await sb.storage.from('consorcio-cadastro').remove([caminho]); },
+      urlCadastro(caminho) { if (!caminho) return null; if (/^(https?|blob|data):/.test(caminho)) return caminho; return sb.storage.from('consorcio-cadastro').getPublicUrl(caminho).data.publicUrl; },
+      async salvarConfig(c) { const { id, atualizado_em, ...r } = Object.fromEntries(Object.entries(c).filter(([k]) => !k.startsWith('_'))); ok(await sb.from('configuracoes').update({ ...r, atualizado_em: new Date().toISOString() }).eq('id', 1)); },
       async registrarPedido(p) { return ok(await sb.rpc('registrar_pedido', { p })); },
       async cancelarPedido(id, motivo) { ok(await sb.rpc('cancelar_pedido', { p_id: id, p_motivo: motivo })); },
       async substituirPedido(id, p) { return ok(await sb.rpc('substituir_pedido', { p_id: id, p })); },
