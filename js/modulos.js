@@ -19,6 +19,8 @@
       '<rect x="14.2" y="12.6" width="6.6" height="8.4" rx="1.2"/><path d="M15.9 15.4h3.2M15.9 17.6h3.2M15.9 19.6h1.8"/>',
     // Selo institucional (escudo) + folhas: o próprio consórcio, seus dados e documentos
     consorcio: '<path d="M12 2.8 4.6 5.6v5.6c0 4.6 3.1 8.3 7.4 9.9 4.3-1.6 7.4-5.3 7.4-9.9V5.6Z"/><path d="M8.6 9.4h6.8M8.6 12.4h6.8M8.6 15.4h4"/>',
+    // Gráfico de barras + lupa: histórico de compras e pesquisa de preços
+    etp: '<path d="M3.6 20.4h16.8"/><path d="M5.6 20.4v-6.2M9.4 20.4V9.8M13.2 20.4v-4.4"/><circle cx="16.4" cy="8" r="3.8"/><path d="m19.2 10.8 2.4 2.4"/><path d="M15 8h2.8M16.4 6.6v2.8"/>',
     // Pessoas + chave (usuários e acessos)
     sistema: '<circle cx="9" cy="8" r="3.4"/><path d="M2.8 19.6c.5-3.5 3-5.6 6.2-5.6 1.4 0 2.6.4 3.6 1.1"/>' +
       '<circle cx="17.2" cy="13.6" r="2.4"/><path d="M17.2 16v5.2M17.2 18.6h2M17.2 20.6h1.4"/><path d="M15.4 3.6a3.4 3.4 0 0 1 0 6.6"/>',
@@ -66,6 +68,14 @@
       cor: '#6a4fc9',
       inicio: '#irps',
       rotas: ['irps', 'irp'],
+    },
+    {
+      id: 'etp',
+      nome: 'Pesquisa de preços e quantitativos (ETP)',
+      descricao: 'Histórico das contratações de cada ente no PNCP (licitações, dispensas, itens, preços e contratos), com os itens agrupados em séries para justificar quantitativos e pesquisar preços.',
+      cor: '#0a8a62',
+      inicio: '#etp',
+      rotas: ['etp', 'etpente', 'etpcompra', 'etpbusca', 'etpserie'],
     },
     {
       id: 'sistema',

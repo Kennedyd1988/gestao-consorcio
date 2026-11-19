@@ -385,6 +385,9 @@
     irp: [
       ['IRP', [['irps', 'Intenções de Registro de Preços']]],
     ],
+    etp: [
+      ['Pesquisa', [['etp', 'Entes e histórico do PNCP'], ['etpbusca', 'Pesquisar itens']]],
+    ],
     consorciados: [
       ['Cadastro', [['entes', 'Entes e consorciados']]],
     ],
@@ -433,7 +436,7 @@
   function rotear() {
     const h = (location.hash || '#inicio').slice(1);
     const [rota, ...resto] = h.split('-'); const id = resto.join('-');
-    const destaque = { pedido: 'pedidos', ata: 'atas', item: 'atas', solicitacao: 'solicitacoes', ente: 'entes', orgaos: 'entes', irp: 'irps' }[rota] || rota;
+    const destaque = { pedido: 'pedidos', ata: 'atas', item: 'atas', solicitacao: 'solicitacoes', ente: 'entes', orgaos: 'entes', irp: 'irps', etpente: 'etp', etpcompra: 'etp', etpserie: 'etpbusca' }[rota] || rota;
     for (const a of $('menu').querySelectorAll('a')) a.dataset.rota === destaque ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
     const c = $('conteudo');
     const tela = TELAS[rota] || TELAS.inicio;

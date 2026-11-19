@@ -527,6 +527,12 @@ returns void language sql security definer set search_path = consorcio, public a
 $$;
 revoke all on function consorcio.etp_recontar(text) from public, anon, authenticated;
 
+-- A função de leitura (chave secreta) grava tudo
+grant all on consorcio.etp_config, consorcio.etp_orgaos, consorcio.etp_fila, consorcio.etp_compras, consorcio.etp_itens, consorcio.etp_resultados,
+  consorcio.etp_contratos, consorcio.etp_entes_cnpj, consorcio.etp_grupos_juntar, consorcio.etp_grupos_item, consorcio.etp_grupos_nome to service_role;
+grant usage, select on all sequences in schema consorcio to service_role;
+grant execute on function consorcio.etp_sincronizar(), consorcio.etp_recontar(text), consorcio.etp_garantir_orgao(text, text, text, int) to service_role;
+
 -- Já carrega os CNPJs que o Cadastro tem hoje
 select consorcio.etp_sincronizar();
 

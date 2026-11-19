@@ -282,6 +282,8 @@
       async acessos() { const m = {}; for (const x of window.MODULOS.lista) m[x.id] = 'administrador'; return m; },
       async acessosDeTodos() { return demoAcessos.map((a) => ({ ...a })); },
       async salvarAcessos(id, lista) { demoAcessos = demoAcessos.filter((a) => a.usuario_id !== id).concat(lista.map((a) => ({ usuario_id: id, modulo_id: a.modulo, perfil: a.perfil }))); },
+      // Pesquisa de preços (ETP): o histórico do PNCP só existe com o banco
+      async etpPainel() { const e = new Error('Na demonstração não há histórico do PNCP: o módulo funciona só com o banco.'); e.semScript = true; throw e; },
     };
     return api;
   }
@@ -634,6 +636,28 @@
         return r.data;
       },
       async salvarAcessos(id, lista) { ok(await sb.rpc('salvar_acessos', { p_usuario: id, p_acessos: lista })); },
+      // ---- Pesquisa de preços e quantitativos (ETP, script 17)
+      async etpPainel() {
+        const { data, error } = await sb.rpc('etp_painel');
+        if (error) { const e = new Error(/etp_painel|schema cache|does not exist/i.test(error.message) ? 'Rode o script 17 na Supabase para ativar o módulo.' : traduzir(error)); e.semScript = /etp_painel|schema cache|does not exist/i.test(error.message); throw e; }
+        return data;
+      },
+      async etpCompras(f) { return ok(await sb.rpc('etp_compras_lista', { p_cnpjs: f.cnpjs, p_ano: f.ano || null, p_modalidade: f.modalidade || null, p_texto: f.texto || null, p_offset: f.offset || 0, p_limite: f.limite || 50 })); },
+      async etpContratos(cnpjs) { return ok(await sb.from('etp_contratos').select('*').in('cnpj', cnpjs).order('data_assinatura', { ascending: false, nullsFirst: false }).limit(1000)); },
+      async etpCompra(controle) { return ok(await sb.rpc('etp_compra', { p_controle: controle })); },
+      async etpBuscar(f) { return ok(await sb.rpc('etp_buscar', { p_texto: f.texto, p_cnpjs: f.cnpjs, p_ano_ini: f.anoIni || null, p_ano_fim: f.anoFim || null, p_limite: f.limite || 100 })); },
+      async etpItensSerie(chave, cnpjs) { return ok(await sb.rpc('etp_itens_serie', { p_chave: chave, p_cnpjs: cnpjs })); },
+      async etpJuntar(chaves, destino, nome) { ok(await sb.rpc('etp_juntar', { p_chaves: chaves, p_destino: destino, p_nome: nome || null })); },
+      async etpSeparar(itens, nome, voltar) { return ok(await sb.rpc('etp_separar', { p_itens: itens, p_nome: nome || null, p_voltar: !!voltar })); },
+      async etpNomear(chave, nome) { ok(await sb.rpc('etp_nomear', { p_chave: chave, p_nome: nome || '' })); },
+      async etpIncluirCnpj(orgao, cnpj, rotulo, nome) { ok(await sb.rpc('etp_incluir_cnpj', { p_orgao: orgao, p_cnpj: cnpj, p_rotulo: rotulo || null, p_nome: nome || null })); },
+      async etpRemoverCnpj(orgao, cnpj) { ok(await sb.from('etp_entes_cnpj').delete().eq('orgao_id', orgao).eq('cnpj', cnpj)); },
+      async etpFuncao(corpo) {
+        const { data, error } = await sb.functions.invoke('consorcio-etp-pncp', { body: corpo });
+        if (data && data.erro) throw new Error(data.erro);
+        if (error) { let m = error.message; try { const j = await error.context.json(); if (j && j.erro) m = j.erro; } catch (e) {} throw new Error(m); }
+        return data;
+      },
     };
     return api;
   }
