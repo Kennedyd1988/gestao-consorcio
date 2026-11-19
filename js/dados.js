@@ -68,7 +68,7 @@
     const CHAVE = 'gestao-consorcio-demo-v2';
     let base;
     const salvarLocal = () => { try { localStorage.setItem(CHAVE, JSON.stringify(limpo())); } catch (e) {} };
-    const limpo = () => ({ config: base.config, atas: base.atas, itens: base.itens, orgaos: base.orgaos, pedidos: base.pedidos, pedido_itens: base.pedido_itens, solicitacoes: base.solicitacoes, periodos: base.periodos, importacoes: base.importacoes, pncp: base.pncp, pncpCfg: base.pncpCfg, pncpPartes: base.pncpPartes, precos: base.precos });
+    const limpo = () => ({ orgao_leis: base.orgao_leis, orgao_gestores: base.orgao_gestores, orgao_contatos: base.orgao_contatos, pessoas: base.pessoas, integracao: base.integracao, config: base.config, atas: base.atas, itens: base.itens, orgaos: base.orgaos, pedidos: base.pedidos, pedido_itens: base.pedido_itens, solicitacoes: base.solicitacoes, periodos: base.periodos, importacoes: base.importacoes, pncp: base.pncp, pncpCfg: base.pncpCfg, pncpPartes: base.pncpPartes, precos: base.precos });
     function semente() {
       const b = { config: { ...CONFIG_PADRAO }, atas: [], itens: [], orgaos: [], pedidos: [], pedido_itens: [], solicitacoes: [], periodos: [], importacoes: [], pncp: [] };
       if (window.DEMO_SEMENTE) importarLocal(b, window.DEMO_SEMENTE);
@@ -126,8 +126,18 @@
         await carregar();
         for (const t of ['orgao_leis', 'orgao_gestores', 'orgao_contatos', 'pessoas']) base[t] = base[t] || [];
         if (!base.pessoas.length) base.pessoas.push({ id: uid(), nome: base.config.presidente_nome, cargo: 'Presidente', ativo: true, assina_documentos: true });
-        return { orgaos: base.orgaos, leis: base.orgao_leis, gestores: base.orgao_gestores, contatos: base.orgao_contatos, pessoas: base.pessoas };
+        base.integracao = base.integracao || ['entes', 'pessoas', 'identidade'].map((item) => ({ item, ativo: false }));
+        return { orgaos: base.orgaos, leis: base.orgao_leis, gestores: base.orgao_gestores, contatos: base.orgao_contatos, pessoas: base.pessoas, config: base.config, integracao: base.integracao, errosSite: [] };
       },
+      async integracao() { await api.carregarCadastro(); return { itens: base.integracao, erros: [] }; },
+      async integracaoConferir(item) {
+        if (item === 'identidade') return { site: { nome_exibicao: base.config.orgao_nome, email: 'cimop.rn@gmail.com' }, gestao: { nome_exibicao: base.config.orgao_nome } };
+        return { site: [], gestao: item === 'entes' ? base.orgaos.filter((o) => o.vinculo === 'consorciado').length : (base.pessoas || []).filter((p) => p.mostrar_site).length, a_definir: base.orgaos.filter((o) => !o.vinculo).length };
+      },
+      async integracaoLigar(item) { const x = base.integracao.find((i) => i.item === item); Object.assign(x, { ativo: true, ativado_em: new Date().toISOString(), ativado_por_nome: 'Kennedy Dantas Francelino', ultimo_envio: new Date().toISOString(), ultimo_resultado: { enviados: 0, erros: 0 } }); salvarLocal(); return { enviados: 0, erros: 0, ligados: 0, trazidos: 0, apagados: 0 }; },
+      async integracaoEnviarTudo(item) { const x = base.integracao.find((i) => i.item === item); x.ultimo_envio = new Date().toISOString(); x.ultimo_resultado = { enviados: 0, erros: 0 }; salvarLocal(); return x.ultimo_resultado; },
+      async integracaoDesligar(item) { base.integracao.find((i) => i.item === item).ativo = false; salvarLocal(); },
+      async siteUnidades() { return [{ id: 'u1', nome: 'Assembleia Geral' }, { id: 'u2', nome: 'Diretoria Executiva' }]; },
       async excluir(tabela, id) { base[tabela] = (base[tabela] || []).filter((x) => x.id !== id); salvarLocal(); },
       async enviarArquivoCadastro(arquivo) { return URL.createObjectURL(arquivo); },
       async apagarArquivoCadastro() {},
@@ -387,10 +397,24 @@
       async carregarCadastro() {
         const r = await sb.from('orgao_gestores').select('id').limit(1);
         if (r.error) { const e = new Error('Rode o script 11 na Supabase para ativar o Cadastro de Consorciados.'); e.semScript = true; throw e; }
-        const [orgaos, leis, gestores, contatos, pessoas] = await Promise.all([tudo('orgaos'), tudo('orgao_leis'), tudo('orgao_gestores'), tudo('orgao_contatos'), tudo('pessoas')]);
-        return { orgaos, leis, gestores, contatos, pessoas };
+        const [orgaos, leis, gestores, contatos, pessoas, config, integ, erros] = await Promise.all([tudo('orgaos'), tudo('orgao_leis'), tudo('orgao_gestores'), tudo('orgao_contatos'), tudo('pessoas'),
+          sb.from('configuracoes').select('*').eq('id', 1).single().then(ok),
+          sb.from('integracao').select('*').then((r) => (r.error ? [] : r.data)), sb.from('integracao_erros').select('*').then((r) => (r.error ? [] : r.data))]);
+        return { orgaos, leis, gestores, contatos, pessoas, config, integracao: integ, errosSite: erros };
       },
       async excluir(tabela, id) { ok(await sb.from(tabela).delete().eq('id', id)); },
+      // ---------- Integração com o site (script 12)
+      async integracao() {
+        const r = await sb.from('integracao').select('*').order('item');
+        if (r.error) { const e = new Error('Rode o script 12 na Supabase para ativar a integração com o site.'); e.semScript = true; throw e; }
+        const er = await sb.from('integracao_erros').select('*').order('quando', { ascending: false });
+        return { itens: r.data, erros: er.data || [] };
+      },
+      async integracaoConferir(item) { return ok(await sb.rpc('integracao_conferir', { p_item: item })); },
+      async integracaoLigar(item, semPar) { return ok(await sb.rpc('integracao_ligar', { p_item: item, p_sem_par: semPar || 'trazer' })); },
+      async integracaoEnviarTudo(item) { return ok(await sb.rpc('integracao_enviar_tudo', { p_item: item })); },
+      async integracaoDesligar(item) { ok(await sb.rpc('integracao_desligar', { p_item: item })); },
+      async siteUnidades() { const r = await sb.rpc('site_unidades'); return r.error ? [] : r.data; },
       async enviarArquivoCadastro(arquivo, pasta) {
         const ext = (arquivo.name.match(/\.(\w+)$/) || [, 'pdf'])[1].toLowerCase();
         const caminho = pasta + '/' + Date.now() + '-' + uid().slice(0, 8) + '.' + ext;

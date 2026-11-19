@@ -50,3 +50,8 @@
   .tabela-cartoes td.celula-acoes { padding-top: 10px !important; display: flex; gap: 8px; flex-wrap: wrap; }
   .tabela-cartoes tbody tr:hover td { background: transparent; }
 }
+.erro-texto { color: var(--red); }
+.cartao-integracao { border-left: 5px solid var(--line); }
+.cartao-integracao.ligada { border-left-color: #0a8a62; }
+.cartao-integracao h2 { margin: 0; }
+.cartao-integracao .msg ul { margin: 6px 0 0 18px; }

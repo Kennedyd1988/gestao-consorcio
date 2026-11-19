@@ -37,7 +37,7 @@
       descricao: 'Cadastro único dos entes (dados, situação no consórcio, lei ratificadora, gestores, contatos e timbre) e das pessoas do CIMOP. Base de todos os módulos.',
       cor: '#0a8a62',
       inicio: '#entes',
-      rotas: ['entes', 'ente', 'pessoas', 'orgaos'],
+      rotas: ['entes', 'ente', 'pessoas', 'cimop', 'orgaos'],
     },
     {
       id: 'adesoes',
@@ -50,11 +50,11 @@
     },
     {
       id: 'sistema',
-      nome: 'Usuários e acessos',
-      descricao: 'Quem entra no sistema e quais módulos cada pessoa vê, com o perfil em cada um.',
+      nome: 'Sistema',
+      descricao: 'Quem entra no sistema e quais módulos cada pessoa vê, com o perfil em cada um. Também a integração com o site do CIMOP.',
       cor: '#4f6378',
       inicio: '#usuarios',
-      rotas: ['usuarios'],
+      rotas: ['usuarios', 'integracao'],
       soAdminSistema: true,
     },
   ];

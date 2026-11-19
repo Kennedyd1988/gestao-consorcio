@@ -330,10 +330,10 @@
       ['Módulo', [['importar', 'Importar planilha', () => podeEditar()], ['configuracoes', 'Configurações do ofício', () => eAdmin()]]],
     ],
     consorciados: [
-      ['Cadastro', [['entes', 'Entes e consorciados'], ['pessoas', 'Pessoas do CIMOP']]],
+      ['Cadastro', [['entes', 'Entes e consorciados'], ['pessoas', 'Pessoas do CIMOP'], ['cimop', 'Dados do CIMOP']]],
     ],
     sistema: [
-      ['Sistema', [['usuarios', 'Usuários e acessos']]],
+      ['Sistema', [['usuarios', 'Usuários e acessos'], ['integracao', 'Integração com o site']]],
     ],
   };
   function montarMenu(mod) {
