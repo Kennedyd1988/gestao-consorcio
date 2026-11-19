@@ -1,6 +1,7 @@
 // Edge Function "consorcio-enviar-email" (Gestão de Consórcio, schema consorcio)
-// Envia o e-mail de resposta ao órgão (ofício anexo + links dos documentos), SÓ quando o usuário
-// revisa e clica em "Enviar" no painel. Registra cada envio em consorcio.emails.
+// Envia o e-mail de resposta ao órgão (ofício anexo + links dos documentos) e os avisos da IRP
+// (divulgação, lembrete, resultado), SÓ quando o usuário revisa e clica em "Enviar" no painel.
+// Registra cada envio em consorcio.emails (com pedido_id ou irp_id/orgao_id).
 // Usa o SMTP já configurado no projeto (secrets SMTP_HOST, SMTP_PORT, SMTP_USUARIO, SMTP_SENHA,
 // SMTP_REMETENTE). Opcional: CONSORCIO_SMTP_REMETENTE, ex.: "CIMOP <adesoes@cimop.rn.gov.br>".
 // Publicar com "Verify JWT" DESLIGADO (a conferência do usuário é feita aqui).
@@ -27,7 +28,10 @@ Deno.serve(async (req) => {
     const { data: quem } = await sb.auth.getUser(token);
     if (!quem?.user) return resposta({ erro: 'Entre novamente no sistema.' }, 401);
     const { data: u } = await sb.from('usuarios').select('perfil, ativo, nome').eq('id', quem.user.id).maybeSingle();
-    if (!u || !u.ativo || !['administrador', 'operador'].includes(u.perfil)) return resposta({ erro: 'Sem permissão para enviar e-mails.' }, 403);
+    // Pode enviar quem edita algum módulo (perfil geral ou perfil por módulo: administrador ou operador)
+    const { data: mods } = await sb.from('usuario_modulos').select('perfil').eq('usuario_id', quem.user.id);
+    const editaModulo = (mods || []).some((m: any) => ['administrador', 'operador'].includes(m.perfil));
+    if (!u || !u.ativo || (!['administrador', 'operador'].includes(u.perfil) && !editaModulo)) return resposta({ erro: 'Sem permissão para enviar e-mails.' }, 403);
 
     const b = await req.json();
     const para = lista(b.para), copia = lista(b.copia);
@@ -46,7 +50,7 @@ Deno.serve(async (req) => {
     const { data: cfg } = await sb.from('configuracoes').select('email_resposta, sigla').eq('id', 1).single();
     const remetente = Deno.env.get('CONSORCIO_SMTP_REMETENTE') || Deno.env.get('SMTP_REMETENTE');
 
-    const registro = { pedido_id: b.pedido_id || null, para: para.join(', '), copia: copia.join(', ') || null, assunto: b.assunto, corpo: b.corpo,
+    const registro = { pedido_id: b.pedido_id || null, irp_id: b.irp_id || null, orgao_id: b.orgao_id || null, para: para.join(', '), copia: copia.join(', ') || null, assunto: b.assunto, corpo: b.corpo,
       anexos: (b.anexos || []).map((a: any) => a.nome), enviado_por: quem.user.id, enviado_por_nome: u.nome };
     try {
       await envio.sendMail({ from: remetente, to: para, cc: copia.length ? copia : undefined, replyTo: cfg?.email_resposta || undefined,

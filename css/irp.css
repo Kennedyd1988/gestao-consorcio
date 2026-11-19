@@ -1,0 +1,28 @@
+/* SOFT+ Consórcios · módulo IRP (padrão SOFT+ do painel) */
+.objeto-irp { max-width: 980px; margin: -4px 0 14px; color: var(--text); line-height: 1.5; }
+.link-copiar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.link-copiar code { flex: 1 1 280px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--ink); font-family: var(--fonte-num); font-size: .82rem; overflow-wrap: anywhere; }
+.lista-marcar { display: grid; gap: 6px; max-height: 320px; overflow: auto; padding: 8px; border: 1px solid var(--line); border-radius: 10px; }
+.lista-marcar .checkbox { align-items: flex-start; }
+.lista-whats { display: grid; gap: 10px; }
+.linha-whats { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.linha-whats .botoes-linha { margin-top: 6px; }
+.btn-whats { background: #128c4a; border: 1px solid #0f7a40; color: #fff; }
+.btn-whats:hover, .btn-whats:focus-visible { background: #0f7a40; color: #fff; }
+.tabela-rolagem { overflow-x: auto; }
+.tabela-mapa th[scope="row"] { text-align: left; font-weight: 600; min-width: 220px; }
+.tabela-mapa tfoot th, .tabela-mapa tfoot td { background: var(--ink); border-top: 2px solid var(--text); }
+.celula-pendente { color: var(--amber); font-style: italic; }
+.vazio-celula { color: #9aa9b8; }
+.texto-longo { min-width: 260px; line-height: 1.45; }
+.novo-item { padding: 12px; margin-bottom: 10px; border: 1px dashed var(--line); border-radius: 12px; }
+.linha-cnpj { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.linha-cnpj .campo { flex: 1 1 240px; margin-bottom: 0; }
+.cartao-destaque { border: 2px solid #0a8a62; box-shadow: 0 10px 24px rgba(10,138,98,.12); }
+.lista-simples { margin: 6px 0 0 18px; color: var(--text-dim); font-size: .9rem; }
+.mt-2 { margin-top: 18px; }
+@media (max-width: 600px) { .linha-cnpj .btn { width: 100%; } }
+.tabela td input[type="number"], .tabela td input[type="text"], .tabela td select { width: 100%; min-width: 90px; min-height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; font: inherit; }
+.tabela td input:focus, .tabela td select:focus { outline: none; border-color: var(--acento, #0a9668); box-shadow: 0 0 0 3px rgba(10,150,104,.2); }
+.acoes-formulario { display: flex; justify-content: flex-end; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+@media (max-width: 600px) { .acoes-formulario .btn { width: 100%; } }

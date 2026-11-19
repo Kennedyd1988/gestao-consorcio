@@ -68,7 +68,7 @@
     const CHAVE = 'gestao-consorcio-demo-v2';
     let base;
     const salvarLocal = () => { try { localStorage.setItem(CHAVE, JSON.stringify(limpo())); } catch (e) {} };
-    const limpo = () => ({ orgao_leis: base.orgao_leis, orgao_gestores: base.orgao_gestores, orgao_contatos: base.orgao_contatos, pessoas: base.pessoas, integracao: base.integracao, config: base.config, atas: base.atas, itens: base.itens, orgaos: base.orgaos, pedidos: base.pedidos, pedido_itens: base.pedido_itens, solicitacoes: base.solicitacoes, periodos: base.periodos, importacoes: base.importacoes, pncp: base.pncp, pncpCfg: base.pncpCfg, pncpPartes: base.pncpPartes, precos: base.precos });
+    const limpo = () => ({ irps: base.irps, irp_itens: base.irp_itens, irp_respostas: base.irp_respostas, irp_resposta_itens: base.irp_resposta_itens, irp_envios: base.irp_envios, irp_prorrogacoes: base.irp_prorrogacoes, irp_numeracao: base.irp_numeracao, ata_participantes: base.ata_participantes, orgao_leis: base.orgao_leis, orgao_gestores: base.orgao_gestores, orgao_contatos: base.orgao_contatos, pessoas: base.pessoas, integracao: base.integracao, config: base.config, atas: base.atas, itens: base.itens, orgaos: base.orgaos, pedidos: base.pedidos, pedido_itens: base.pedido_itens, solicitacoes: base.solicitacoes, periodos: base.periodos, importacoes: base.importacoes, pncp: base.pncp, pncpCfg: base.pncpCfg, pncpPartes: base.pncpPartes, precos: base.precos });
     function semente() {
       const b = { config: { ...CONFIG_PADRAO }, atas: [], itens: [], orgaos: [], pedidos: [], pedido_itens: [], solicitacoes: [], periodos: [], importacoes: [], pncp: [] };
       if (window.DEMO_SEMENTE) importarLocal(b, window.DEMO_SEMENTE);
@@ -138,6 +138,7 @@
       async integracaoEnviarTudo(item) { const x = base.integracao.find((i) => i.item === item); x.ultimo_envio = new Date().toISOString(); x.ultimo_resultado = { enviados: 0, erros: 0 }; salvarLocal(); return x.ultimo_resultado; },
       async integracaoDesligar(item) { base.integracao.find((i) => i.item === item).ativo = false; salvarLocal(); },
       async siteUnidades() { return [{ id: 'u1', nome: 'Assembleia Geral' }, { id: 'u2', nome: 'Diretoria Executiva' }]; },
+      ...window.DEMO_IRP ? window.DEMO_IRP(() => base, { uid, salvarLocal, carregar: () => carregar() }) : {},
       async excluir(tabela, id) { base[tabela] = (base[tabela] || []).filter((x) => x.id !== id); salvarLocal(); },
       async enviarArquivoCadastro(arquivo) { return URL.createObjectURL(arquivo); },
       async apagarArquivoCadastro() {},
@@ -385,8 +386,9 @@
           tudo('pncp_partes', 'ata_id').catch(() => null),           // sem o script 06: null
           tudo('precos', 'vigente_desde').catch(() => null)]);       // sem o script 08: null
         const pessoas = await tudo('pessoas').catch(() => []);         // sem o script 11: sem pessoas
+        const participantes = await tudo('ata_participantes').catch(() => []);   // sem o script 13: nenhum
         presidenteDoCadastro(config, pessoas);
-        return indexar({ config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes, periodos, pncp: pncp || [], pncpAtivo: pncp !== null, pncpPartes: partes || [], partesAtivo: partes !== null, precos: precos || [], precosAtivo: precos !== null });
+        return indexar({ config, atas, itens, orgaos, pedidos, pedido_itens, solicitacoes, periodos, pncp: pncp || [], pncpAtivo: pncp !== null, pncpPartes: partes || [], partesAtivo: partes !== null, precos: precos || [], precosAtivo: precos !== null, participantes });
       },
       async salvar(tabela, reg) {
         const { id, ...resto } = Object.fromEntries(Object.entries(reg).filter(([k]) => !k.startsWith('_')));
@@ -415,6 +417,45 @@
       async integracaoEnviarTudo(item) { return ok(await sb.rpc('integracao_enviar_tudo', { p_item: item })); },
       async integracaoDesligar(item) { ok(await sb.rpc('integracao_desligar', { p_item: item })); },
       async siteUnidades() { const r = await sb.rpc('site_unidades'); return r.error ? [] : r.data; },
+      // ---------- IRP (script 13)
+      async carregarIrp() {
+        const r = await sb.from('irps').select('id').limit(1);
+        if (r.error) { const e = new Error('Rode o script 13 na Supabase para ativar o módulo IRP.'); e.semScript = true; throw e; }
+        const vazio = () => [];
+        const [irps, itens, respostas, respItens, envios, prorrogacoes, numeracao, atas, ataItens, participantes, emails] = await Promise.all([
+          tudo('irps'), tudo('irp_itens'), tudo('irp_respostas'), tudo('irp_resposta_itens'), tudo('irp_envios'), tudo('irp_prorrogacoes'),
+          sb.from('irp_numeracao').select('*').then(ok), tudo('atas').catch(vazio), tudo('itens').catch(vazio), tudo('ata_participantes').catch(vazio),
+          sb.from('emails').select('id, irp_id, orgao_id, para, assunto, situacao, criado_em').not('irp_id', 'is', null).then((x) => x.data || [])]);
+        return { irps, itens, respostas, respItens, envios, prorrogacoes, numeracao, atas, ataItens, participantes, emails };
+      },
+      async criarIrp(p) { return ok(await sb.rpc('criar_irp', { p })); },
+      async definirNumeracaoIrp(ano, proximo) { ok(await sb.rpc('definir_numeracao_irp', { p_ano: ano, p_proximo: proximo })); },
+      async prazoMinimoIrp(data, direta) { return ok(await sb.rpc('prazo_minimo_irp', { p_divulgacao: data, p_direta: !!direta })); },
+      async analisarRespostaIrp(id, itens, motivo) { return ok(await sb.rpc('analisar_resposta_irp', { p_resposta: id, p_itens: itens, p_motivo: motivo || null })); },
+      async lancarEtpIrp(irp, orgao, itens) { return ok(await sb.rpc('lancar_etp_irp', { p_irp: irp, p_orgao: orgao, p_itens: itens })); },
+      async inclusaoPosteriorIrp(irp, p) { return ok(await sb.rpc('registrar_inclusao_posterior_irp', { p_irp: irp, p })); },
+      async prorrogarIrp(irp, prazo, motivo) { ok(await sb.rpc('prorrogar_irp', { p_irp: irp, p_prazo: prazo, p_motivo: motivo })); },
+      async consolidarIrp(irp) { ok(await sb.rpc('consolidar_irp', { p_irp: irp })); },
+      async levarIrpParaAta(irp, ata, mapa) { return ok(await sb.rpc('levar_irp_para_ata', { p_irp: irp, p_ata: ata, p_mapa: mapa })); },
+      async registrarEnvioIrp(r) { ok(await sb.from('irp_envios').insert(r)); },
+      async urlIrp(caminho) { const { data } = await sb.storage.from('consorcio-irp').createSignedUrl(caminho, 600); return data && data.signedUrl; },
+      async enviarExpedienteIrp(arquivo, irp) {
+        const caminho = 'expedientes/' + irp + '/' + uid() + '/' + arquivo.name.normalize('NFD').replace(/[^\w.\-]+/g, '_');
+        const { error } = await sb.storage.from('consorcio-irp').upload(caminho, arquivo, { contentType: 'application/pdf', upsert: false });
+        if (error) throw new Error('Não foi possível enviar o arquivo: ' + error.message);
+        return caminho;
+      },
+      // formulário público (sem login)
+      async publicoIrp(id) { return ok(await sb.rpc('publico_irp', { p_id: id })); },
+      async publicoIrpEnte(id, cnpj) { return ok(await sb.rpc('publico_irp_ente', { p_id: id, p_cnpj: cnpj })); },
+      async publicoIrpSalvar(id, p) { return ok(await sb.rpc('publico_irp_salvar', { p_id: id, p })); },
+      async publicoIrpAnexar(irp, protocolo, cnpj, arquivo) {
+        const caminho = 'envios/' + irp + '/' + uid() + '/' + arquivo.name.normalize('NFD').replace(/[^\w.\-]+/g, '_');
+        const { error } = await sb.storage.from('consorcio-irp').upload(caminho, arquivo, { contentType: 'application/pdf', upsert: false });
+        if (error) throw new Error('Não foi possível enviar o arquivo: ' + error.message);
+        return ok(await sb.rpc('publico_irp_anexar', { p_protocolo: protocolo, p_cnpj: cnpj, p_caminho: caminho, p_nome: arquivo.name }));
+      },
+      async publicoIrpConsultar(protocolo, cnpj) { return ok(await sb.rpc('publico_irp_consultar', { p_protocolo: protocolo, p_cnpj: cnpj })); },
       async enviarArquivoCadastro(arquivo, pasta) {
         const ext = (arquivo.name.match(/\.(\w+)$/) || [, 'pdf'])[1].toLowerCase();
         const caminho = pasta + '/' + Date.now() + '-' + uid().slice(0, 8) + '.' + ext;

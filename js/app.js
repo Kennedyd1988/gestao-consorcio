@@ -301,7 +301,7 @@
     catch (e) { msg('nova-msg', e.message); } finally { ocupado(btn); }
   });
   async function sair() {
-    await D.sair(); Object.assign(estado, { usuario: null, acessos: null, base: null, cad: null, modulo: null, logado: false });
+    await D.sair(); Object.assign(estado, { usuario: null, acessos: null, base: null, cad: null, irp: null, modulo: null, logado: false });
     history.replaceState(null, '', location.pathname + location.search);
     mostrarTela('tela-login'); $('form-login').hidden = false; $('form-nova-senha').hidden = true;
   }
@@ -328,6 +328,9 @@
       ['Adesões', [['solicitacoes', 'Solicitações recebidas'], ['novo', 'Novo pedido de adesão', () => podeEditar()], ['pedidos', 'Pedidos e ofícios'], ['relatorio', 'Relatório em PDF']]],
       ['Cadastros', [['atas', 'Atas de registro de preços'], ['pncp', 'Atualizações do PNCP', () => podeEditar()]]],
       ['Módulo', [['importar', 'Importar planilha', () => podeEditar()], ['configuracoes', 'Configurações do ofício', () => eAdmin()]]],
+    ],
+    irp: [
+      ['IRP', [['irps', 'Intenções de Registro de Preços']]],
     ],
     consorciados: [
       ['Cadastro', [['entes', 'Entes e consorciados'], ['pessoas', 'Pessoas do CIMOP'], ['cimop', 'Dados do CIMOP']]],
@@ -372,7 +375,7 @@
   function rotear() {
     const h = (location.hash || '#inicio').slice(1);
     const [rota, ...resto] = h.split('-'); const id = resto.join('-');
-    const destaque = { pedido: 'pedidos', ata: 'atas', item: 'atas', solicitacao: 'solicitacoes', ente: 'entes', orgaos: 'entes' }[rota] || rota;
+    const destaque = { pedido: 'pedidos', ata: 'atas', item: 'atas', solicitacao: 'solicitacoes', ente: 'entes', orgaos: 'entes', irp: 'irps' }[rota] || rota;
     for (const a of $('menu').querySelectorAll('a')) a.dataset.rota === destaque ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
     const c = $('conteudo');
     const tela = TELAS[rota] || TELAS.inicio;
@@ -399,6 +402,11 @@
       mostrarTela('tela-carregando'); $('carregando-texto').textContent = 'Carregando atas e pedidos…';
       try { await recarregar(); } catch (e) { mostrarTela('tela-modulos'); toast(e.message, true); return; }
     }
+    if (mod.id === 'irp' && (!estado.cad || !estado.irp)) {
+      mostrarTela('tela-carregando'); $('carregando-texto').textContent = 'Carregando as IRPs…';
+      try { if (!estado.cad) await recarregarCadastro(); if (!estado.irp) await window.IRP.recarregarIrp(); }
+      catch (e) { if (!e.semScript) { mostrarTela('tela-modulos'); toast(e.message, true); return; } estado.irp = null; }
+    }
     if (mod.id === 'consorciados' && !estado.cad) {
       mostrarTela('tela-carregando'); $('carregando-texto').textContent = 'Carregando o cadastro dos entes…';
       try { await recarregarCadastro(); } catch (e) { mostrarTela('tela-modulos'); toast(e.message, true); return; }
@@ -417,7 +425,7 @@
   }
 
   // Formulário público (#solicitar) e consulta (#consultar) abrem sem login
-  const ehPublica = () => /^#(solicitar|consultar)/.test(location.hash);
+  const ehPublica = () => /^#(solicitar|consultar|manifestar)/.test(location.hash);
   window.addEventListener('hashchange', () => {
     if (ehPublica()) { mostrarTela('tela-publica'); telaPublica(); return; }
     if (estado.logado) navegar();
@@ -507,6 +515,10 @@
     if (perfilEm('consorciados') && !estado.cad && !estado.carregandoCad) {
       estado.carregandoCad = true;
       recarregarCadastro().then(() => { if (!$('tela-modulos').hidden) telaModulos(); }).catch(() => {}).finally(() => { estado.carregandoCad = false; });
+    }
+    if (perfilEm('irp') && !estado.irp && !estado.carregandoIrp && window.IRP) {
+      estado.carregandoIrp = true;
+      window.IRP.recarregarIrp().then(() => { if (!$('tela-modulos').hidden) telaModulos(); }).catch(() => {}).finally(() => { estado.carregandoIrp = false; });
     }
     if (perfilEm('adesoes') && !estado.base && !estado.carregandoBase) {
       estado.carregandoBase = true;
@@ -986,6 +998,17 @@
       })) : el('p', { class: 'vazio' }, 'Nenhuma ata cadastrada. Use "Importar ata por planilha".'));
   };
 
+  // Órgãos participantes vindos da IRP (não contam como adesão)
+  function abaParticipantes(b, a) {
+    const ps = (b.participantes || []).filter((p) => p.ata_id === a.id);
+    const itens = Object.fromEntries(b.itens.map((i) => [i.id, i]));
+    const orgs = [...new Set(ps.map((p) => p.orgao_id))].map((id) => b.orgaosPorId[id] || { id, nome: '—' }).sort((x, y) => x.nome.localeCompare(y.nome, 'pt-BR'));
+    return el('div', null,
+      el('p', { class: 'ajuda' }, 'Órgãos participantes definidos na Intenção de Registro de Preços, com as quantidades aceitas. Não contam como adesão (carona).'),
+      tabela(['Órgão participante', 'Item', 'Quantidade'], orgs.flatMap((o) => ps.filter((p) => p.orgao_id === o.id).sort((x, y) => Number((itens[x.item_id] || {}).numero) - Number((itens[y.item_id] || {}).numero))
+        .map((p, k) => el('tr', null, el('td', null, k === 0 ? o.nome : ''), el('td', null, 'Item ' + ((itens[p.item_id] || {}).numero || '?') + ' · ' + String((itens[p.item_id] || {}).descricao || '').slice(0, 70)),
+          el('td', { class: 'num' }, Number(p.quantidade).toLocaleString('pt-BR')))))));
+  }
   TELAS.ata = (c, id) => {
     const b = estado.base, a = b.atasPorId[id];
     if (!a) { rc(c, cabecalho('Ata não encontrada', null, el('a', { class: 'btn btn-claro', href: '#atas' }, 'Voltar'))); return; }
@@ -1027,7 +1050,8 @@
         podeEditar() ? el('button', { type: 'button', class: 'btn btn-primario', onclick: () => formAta(a) }, 'Editar ata') : null),
       selCiclo ? el('div', { class: 'faixa-ciclo' }, el('strong', null, 'Quantitativos renovados.'), ' Saldos e mapa do ciclo:', selCiclo,
         cicloVer(a.id) !== atual ? el('span', { class: 'etiqueta etiqueta-pendente' }, 'vendo ciclo anterior') : null) : null,
-      abas([['itens', 'Itens e saldos (' + itens.length + ')', abaItens], ['mapa', 'Mapa de adesões', abaMapa], ['vigencias', 'Vigências e prorrogações (' + R.periodosDa(b, a.id).length + ')', abaVig], ['dados', 'Dados da ata', abaDados]]));
+      abas([['itens', 'Itens e saldos (' + itens.length + ')', abaItens], ['mapa', 'Mapa de adesões', abaMapa],
+        ...((b.participantes || []).some((p) => p.ata_id === a.id) ? [['participantes', 'Participantes (IRP)', () => abaParticipantes(b, a)]] : []), ['vigencias', 'Vigências e prorrogações (' + R.periodosDa(b, a.id).length + ')', abaVig], ['dados', 'Dados da ata', abaDados]]));
   };
 
   function formPeriodo(a, p) {
@@ -1775,6 +1799,7 @@
   async function telaPublica() {
     const c = $('conteudo-publico');
     if (/^#consultar/.test(location.hash)) return telaConsulta(c);
+    if (/^#manifestar/.test(location.hash)) return window.IRP.telaPublica(c);
     rc(c, el('p', { class: 'ajuda' }, 'Carregando atas…'));
     try { sol.atas = sol.atas || await D.publicoAtas(); } catch (e) { rc(c, el('p', { class: 'msg msg-erro' }, 'Não foi possível carregar as atas: ' + e.message)); return; }
     const atas = sol.atas;

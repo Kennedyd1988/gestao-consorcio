@@ -14,6 +14,7 @@
     adesoes: '<path d="M6 2.8h7.2L18 7.6v4.1"/><path d="M13 2.8v4.9h5"/><path d="M6 2.8a1.6 1.6 0 0 0-1.6 1.6v15.2A1.6 1.6 0 0 0 6 21.2h5.4"/>' +
       '<path d="M7.6 10h6.6M7.6 13.4h4.2M7.6 16.8h2.6"/><circle cx="17.2" cy="17" r="4.6"/><path d="m15.1 17 1.5 1.5 2.8-2.9"/>',
     // Prédio público (frontão e colunas) + ficha: cadastro dos entes
+    irp: '<rect x="4" y="3" width="12" height="16" rx="1.6"/><path d="M7 7.5h6M7 10.5h6M7 13.5h3.5"/><circle cx="17" cy="16.5" r="3.6"/><path d="m19.6 19.1 2 2"/>',
     consorciados: '<path d="M3 9.2 11 4.6l8 4.6"/><path d="M4.4 9.4h13.2"/><path d="M6.2 9.6v7.2M9.4 9.6v7.2M12.6 9.6v4.4"/><path d="M3.4 19.6h8.2"/><path d="M4.4 17h7.2"/>' +
       '<rect x="14.2" y="12.6" width="6.6" height="8.4" rx="1.2"/><path d="M15.9 15.4h3.2M15.9 17.6h3.2M15.9 19.6h1.8"/>',
     // Pessoas + chave (usuários e acessos)
@@ -47,6 +48,14 @@
       inicio: '#inicio',
       // rotas (primeira parte do endereço, antes do "-") que pertencem ao módulo
       rotas: ['inicio', 'solicitacoes', 'solicitacao', 'novo', 'pedidos', 'pedido', 'relatorio', 'atas', 'ata', 'item', 'pncp', 'importar', 'configuracoes'],
+    },
+    {
+      id: 'irp',
+      nome: 'Intenção de Registro de Preços',
+      descricao: 'IRP: edital em Word, formulário online com PDF no timbre do ente, divulgação por e-mail e WhatsApp, análise, demandas do ETP, consolidação e participantes da Ata.',
+      cor: '#6a4fc9',
+      inicio: '#irps',
+      rotas: ['irps', 'irp'],
     },
     {
       id: 'sistema',
