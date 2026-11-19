@@ -35,3 +35,18 @@
 .previa-linhas span:nth-child(2) { width: 86%; } .previa-linhas span:nth-child(3) { width: 62%; }
 @media (max-width: 600px) { .indicadores { grid-template-columns: repeat(2, 1fr); } .faixa-acao .btn { width: 100%; } }
 .tabela .etiqueta { white-space: nowrap; }
+
+/* Tabelas do Cadastro viram cartões no celular */
+@media (max-width: 760px) {
+  .tabela-caixa:has(.tabela-cartoes) { border: 0; background: transparent; overflow: visible; }
+  .tabela-cartoes thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .tabela-cartoes, .tabela-cartoes tbody, .tabela-cartoes tr, .tabela-cartoes td { display: block; width: 100%; box-sizing: border-box; min-width: 0; }
+  .tabela-cartoes tr { box-sizing: border-box; background: #fff; border: 1px solid #e3eaf1; border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
+  .tabela-cartoes tr[hidden] { display: none; }
+  .tabela-cartoes td { border: 0 !important; padding: 4px 0 !important; text-align: left !important; }
+  .tabela-cartoes td[data-rotulo]::before { content: attr(data-rotulo); display: block; font-family: var(--fonte); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 1px; }
+  .tabela-cartoes td:first-child { font-size: 1rem; padding-bottom: 8px !important; border-bottom: 1px solid var(--line) !important; margin-bottom: 4px; }
+  .tabela-cartoes td:first-child::before { display: none; }
+  .tabela-cartoes td.celula-acoes { padding-top: 10px !important; display: flex; gap: 8px; flex-wrap: wrap; }
+  .tabela-cartoes tbody tr:hover td { background: transparent; }
+}

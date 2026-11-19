@@ -7,9 +7,16 @@
 (function () {
   'use strict';
   const N = window.NUCLEO;
-  const { el, rc, estado, D, O, toast, marcarErro, campo, txt, area, sel, abrirDialogo, confirmar, abas, tabela, cabecalho, paginarTudo,
+  const { el, rc, estado, D, O, toast, marcarErro, campo, txt, area, sel, abrirDialogo, confirmar, abas, cabecalho, paginarTudo,
     baixar, ocupado, consultarReceita, formatarTelefone, mascaraTelefone, telefoneValido, normalizar, UFS, XLSX_T, TELAS } = N;
   const pode = () => N.podeEditarCadastro();
+  // Tabela que vira cartões no celular (padrão SOFT+): cada célula ganha o rótulo da coluna.
+  function tabela(cab, linhas, extra) {
+    const t = N.tabela(cab, linhas, Object.assign({ classeTabela: 'tabela-cartoes' }, extra || {}));
+    const rotulos = cab.map((x) => (x instanceof Node ? x.textContent : String(x || '')).trim());
+    t.querySelectorAll('tbody tr').forEach((tr) => [...tr.children].forEach((td, i) => { if (rotulos[i]) td.setAttribute('data-rotulo', rotulos[i]); else td.classList.add('celula-acoes'); }));
+    return t;
+  }
 
   // ---------------------------------------------------------------- rótulos
   const VINCULO = { consorciado: 'Consorciado', nao_consorciado: 'Não consorciado', cooperado: 'Cooperado' };
