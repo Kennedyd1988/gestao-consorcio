@@ -72,10 +72,10 @@
     {
       id: 'etp',
       nome: 'Pesquisa de preços e quantitativos (ETP)',
-      descricao: 'Histórico das contratações de cada ente no PNCP (licitações, dispensas, itens, preços e contratos), com os itens agrupados em séries para justificar quantitativos e pesquisar preços.',
+      descricao: 'Estimativa de quantitativos por ente e pesquisa de preços para o ETP, com o histórico do PNCP, os empenhos do TCE-RN, a população e o Censo Escolar.',
       cor: '#0a8a62',
-      inicio: '#etp',
-      rotas: ['etp', 'etpente', 'etpcompra', 'etpbusca', 'etpserie'],
+      inicio: '#etpestimativas',
+      rotas: ['etp', 'etpente', 'etpcompra', 'etpbusca', 'etpserie', 'etpconsumo', 'etpampliada', 'etpestimativas', 'etpestimativa'],
     },
     {
       id: 'sistema',

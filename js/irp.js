@@ -531,7 +531,27 @@ ${(pessoa(i.signatario_id) || {}).cargo || ''} do ${cf.sigla || SG()}`, { rows: 
           r.situacao === 'analisada' && r.origem !== 'etp' && pode() ? el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: () => comunicarResultado(i, r) }, r.comunicado_em ? '✓ Comunicado' : 'Comunicar resultado') : null] : null)))),
       todas.some((r) => r.situacao === 'substituida') ? el('p', { class: 'ajuda' }, todas.filter((r) => r.situacao === 'substituida').length + ' manifestação(ões) substituída(s) por envio mais novo do mesmo ente ficam no histórico.') : null);
   }
-  function dialogoAnalise(i, r) {
+  // Quantidade estimada no ETP (módulo de pesquisa de preços e quantitativos) para o ente, quando o item veio de uma estimativa
+  const estimativasCache = {};
+  async function estimadoEtp(itens, orgaoId) {
+    const ids = [...new Set(itens.filter((t) => t && t.estimativa_id).map((t) => t.estimativa_id))];
+    const out = {};
+    for (const id of ids) {
+      if (!(id in estimativasCache)) { try { estimativasCache[id] = D.etpEstimativa ? await D.etpEstimativa(id) : null; } catch (e) { estimativasCache[id] = null; } }
+      const est = estimativasCache[id];
+      if (!est || !est.dados || !est.dados.resultado) continue;
+      itens.filter((t) => t && t.estimativa_id === id).forEach((t) => { const q = (est.dados.resultado[t.estimativa_item] || {})[orgaoId]; if (q != null) out[t.id] = Number(q); });
+    }
+    return out;
+  }
+  async function dialogoAnalise(i, r) {
+    const estEtp = await estimadoEtp(itensResp(r.id).map((x) => B().itens.find((t) => t.id === x.item_id)), r.orgao_id);
+    const avisoEtp = (x) => {
+      if (!x.item || !(x.item.id in estEtp)) return null;
+      const e = estEtp[x.item.id], q = Number(x.qtd_informada || 0);
+      const fora = e > 0 ? q > e * 1.5 || q < e * 0.5 : q > 0;
+      return el('div', { class: 'ajuda' + (fora ? ' aviso-etp' : '') }, 'Estimado no ETP: ' + num(e) + (fora ? ' · fora do esperado' : ''));
+    };
     const ls = itensResp(r.id).map((x) => Object.assign({}, x, { item: B().itens.find((t) => t.id === x.item_id) })).sort((a, b) => ((a.item || {}).numero || 999) - ((b.item || {}).numero || 999));
     const editavel = pode() && !['consolidada', 'cancelada'].includes(i.situacao);
     const campos = ls.map((x) => {
@@ -554,7 +574,7 @@ ${(pessoa(i.signatario_id) || {}).cargo || ''} do ${cf.sigla || SG()}`, { rows: 
       el('p', { class: 'ajuda' }, 'Pelo ' + normaTexto() + ', o ' + SG() + ' pode aceitar ou recusar quantitativos ínfimos, novos itens e itens com especificação modificada, e ajustar quantidades para padronizar e racionalizar. Ajuste e recusa exigem motivo.'),
       tabela(['Item', 'Informado', 'Decisão', 'Aceito', 'Motivo'], campos.map((k) => el('tr', null,
         el('td', null, k.x.item ? el('span', null, el('strong', null, k.x.item.numero + '. '), k.x.item.descricao.slice(0, 90) + (k.x.item.descricao.length > 90 ? '…' : '')) : el('span', null, el('strong', null, 'Novo item: '), k.x.novo_descricao, ' (' + (k.x.novo_unidade || '') + ')', el('span', { class: 'sub-linha' }, 'Justificativa: ' + (k.x.justificativa || '—')))),
-        el('td', { class: 'num' }, num(k.x.qtd_informada)), el('td', null, k.dec), el('td', null, k.qtd), el('td', null, k.mot)))),
+        el('td', { class: 'num' }, num(k.x.qtd_informada), avisoEtp(k.x)), el('td', null, k.dec), el('td', null, k.qtd), el('td', null, k.mot)))),
       campo('fa-geral', 'Observação geral', geral)),
     [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Fechar'), editavel ? btn : null], true);
     btn.addEventListener('click', async () => {

@@ -15,3 +15,19 @@
 .riscado { text-decoration: line-through; opacity: .6; }
 .barra-lista { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; margin: 8px 0; }
 @media (max-width: 760px) { .filtros-linha .campo { flex-basis: 100%; } }
+
+/* Fase 3: consumo, pesquisa ampliada e estimativas */
+tr.linha-fora td { background: #f7f8fa; color: var(--text-dim); }
+.tabela-qtd th, .tabela-qtd td { white-space: nowrap; }
+.tabela-qtd thead th { font-size: 12px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+.tabela-qtd tbody th { text-align: left; font-weight: 600; font-size: 13px; position: sticky; left: 0; background: #fff; z-index: 1; min-width: 260px; white-space: normal; }
+.tabela-qtd input.campo-num { width: 78px; }
+.tabela-edicao input.ajustado { border-color: var(--amber, #b3790f); background: #fff7e6; font-weight: 700; }
+.resumo-precos { display: flex; flex-wrap: wrap; gap: 18px; padding: 12px 14px; background: #eef8f3; border-radius: 12px; margin: 6px 0 10px; }
+tr.linha-total td { background: #eef4fb; font-weight: 700; }
+.linha-portes { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 8px; }
+.linha-portes .campo-num { width: 90px; height: 36px; border: 1px solid var(--line); border-radius: 8px; padding: 0 8px; }
+.filtros-linha .campo-num { width: 90px; height: 40px; border: 1px solid var(--line); border-radius: 8px; padding: 0 8px; }
+.texto-modelo { width: 100%; font-family: inherit; font-size: 14px; line-height: 1.55; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfe; }
+.aviso-etp { color: var(--red, #c73f3f); font-weight: 600; }
+.mt-2 { margin-top: 12px; }

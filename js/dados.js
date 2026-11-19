@@ -643,6 +643,33 @@
         return data;
       },
       async etpCompras(f) { return ok(await sb.rpc('etp_compras_lista', { p_cnpjs: f.cnpjs, p_ano: f.ano || null, p_modalidade: f.modalidade || null, p_texto: f.texto || null, p_offset: f.offset || 0, p_limite: f.limite || 50 })); },
+      // ---- ETP fase 3 (scripts 19 e 20)
+      async etpEntesDados() { return ok(await sb.rpc('etp_entes_dados')); },
+      async etpUnidadeIncluir(orgao, identificador, incluir) { ok(await sb.rpc('etp_unidade_incluir', { p_orgao: orgao, p_identificador: identificador, p_incluir: incluir })); ok(await sb.rpc('etp_tce_enfileirar')); },
+      async etpCategorias() { return ok(await sb.from('etp_categorias').select('*').order('nome')); },
+      async etpSalvarCategoria(c) {
+        const reg = { nome: c.nome, termos: c.termos, excluir: c.excluir, atualizado_em: new Date().toISOString() };
+        return ok(c.id ? await sb.from('etp_categorias').update(reg).eq('id', c.id).select().single() : await sb.from('etp_categorias').insert(reg).select().single());
+      },
+      async etpExcluirCategoria(id) { ok(await sb.from('etp_categorias').delete().eq('id', id)); },
+      async etpConsumo(categoria, anoIni, anoFim) { return ok(await sb.rpc('etp_consumo', { p_categoria: categoria, p_ano_ini: anoIni || 2023, p_ano_fim: anoFim || null })); },
+      async etpEmpenhos(f) { return ok(await sb.rpc('etp_empenhos_lista', { p_categoria: f.categoria, p_orgao: f.orgao, p_ano: f.ano || null, p_so_dentro: f.soDentro !== false, p_texto: f.texto || null, p_offset: f.offset || 0, p_limite: f.limite || 100 })); },
+      async etpEmpenhoMarcar(categoria, e, incluir) { ok(await sb.rpc('etp_empenho_marcar', { p_categoria: categoria, p_identificador: e.identificador, p_ano: e.ano, p_data: e.data, p_numero: e.numero, p_incluir: incluir })); },
+      async etpPesquisar(termo, abrangencia) { return ok(await sb.rpc('etp_pesquisar_ampliada', { p_termo: termo, p_abrangencia: abrangencia || 'RN', p_limite: 300 })); },
+      async etpPesquisas() { return ok(await sb.rpc('etp_pesquisas_lista')); },
+      async etpExcluirPesquisa(id) { ok(await sb.from('etp_pesquisas').delete().eq('id', id)); },
+      async etpPrecos(chaves, cnpjs) { return ok(await sb.rpc('etp_precos', { p_chaves: chaves, p_cnpjs: cnpjs })); },
+      async etpIpca() { return ok(await sb.from('etp_ipca').select('mes, indice').order('mes')); },
+      async etpIndicadores() { return ok(await sb.from('etp_indicadores').select('id, nome, unidade').order('posicao')); },
+      async etpIndicadorEntes(id, ano) { return ok(await sb.rpc('etp_indicador_entes', { p_indicador: id, p_ano: ano || null })); },
+      async etpEstimativas() { return ok(await sb.from('etp_estimativas').select('id, titulo, processo, objeto, irp_id, criado_em, atualizado_em, criado_por_nome').order('atualizado_em', { ascending: false })); },
+      async etpEstimativa(id) { return ok(await sb.from('etp_estimativas').select('*').eq('id', id).maybeSingle()); },
+      async etpSalvarEstimativa(e) {
+        const reg = { titulo: e.titulo, processo: e.processo || null, objeto: e.objeto || null, dados: e.dados || {}, irp_id: e.irp_id || null, atualizado_em: new Date().toISOString() };
+        if (e.id) return ok(await sb.from('etp_estimativas').update(reg).eq('id', e.id).select().single());
+        return ok(await sb.from('etp_estimativas').insert({ ...reg, criado_por_nome: (window.NUCLEO && window.NUCLEO.estado.usuario && window.NUCLEO.estado.usuario.nome) || null }).select().single());
+      },
+      async etpExcluirEstimativa(id) { ok(await sb.from('etp_estimativas').delete().eq('id', id)); },
       async etpBuscarAgora() { return ok(await sb.rpc('etp_buscar_agora')); },
       async etpStatus() { const r = await sb.rpc('etp_status'); return r.error ? null : r.data; },
       async etpContratos(cnpjs) { return ok(await sb.from('etp_contratos').select('*').in('cnpj', cnpjs).order('data_assinatura', { ascending: false, nullsFirst: false }).limit(1000)); },

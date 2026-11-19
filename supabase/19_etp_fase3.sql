@@ -219,7 +219,8 @@ create or replace function consorcio.etp_pedir_fonte(p_tipo text, p_url text, p_
 returns void language plpgsql security definer set search_path = consorcio, public, extensions as $$
 begin
   insert into consorcio.etp_pedidos_fontes (id, tipo, url, chave, ano, pagina, tentativa)
-  values (net.http_get(url := p_url, headers := '{"accept":"application/json","user-agent":"SOFT+ Consorcios (gestao-consorcio; etp)"}'::jsonb,
+  -- o servidor do TCE-RN recusa cabeçalhos extras (HTTP 400 "Invalid Header"): só o accept
+  values (net.http_get(url := p_url, headers := '{"accept":"application/json"}'::jsonb,
             timeout_milliseconds := case when p_tipo = 'tce_empenhos' then 180000 else 60000 end),
           p_tipo, p_url, p_chave, p_ano, p_pagina, p_tentativa);
 end $$;

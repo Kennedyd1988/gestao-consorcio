@@ -276,13 +276,29 @@
         el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: () => { b.entes = comCnpj.map((o) => o.id); lista.querySelectorAll('input').forEach((i) => { i.checked = true; }); resumoEntes(); } }, 'Marcar todos'),
         el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: () => { b.entes = []; lista.querySelectorAll('input').forEach((i) => { i.checked = false; }); resumoEntes(); } }, 'Desmarcar todos')), lista));
     form.addEventListener('submit', (ev) => { ev.preventDefault(); b.texto = fTxt.value.trim(); b.anoIni = fIni.value; b.anoFim = fFim.value; b.res = null; pesquisar(); });
+    // pesquisas ampliadas no PNCP (outros órgãos)
+    const boxPesq = el('details', { class: 'detalhe-entes' }, el('summary', null, 'Incluir pesquisas ampliadas no PNCP'), el('p', { class: 'ajuda' }, 'Carregando…'));
+    form.appendChild(boxPesq);
+    D.etpPesquisas && D.etpPesquisas().then((ps) => {
+      ps = ps.filter((p) => p.cnpjs.length);
+      b.pesquisas = (b.pesquisas || []).filter((id) => ps.some((p) => p.id === id));
+      boxPesq.querySelector('summary').textContent = 'Incluir pesquisas ampliadas no PNCP (' + b.pesquisas.length + ' de ' + ps.length + ')';
+      if (b.pesquisas.length) boxPesq.open = true;
+      rc(boxPesq, boxPesq.querySelector('summary'), ps.length ? el('div', { class: 'lista-entes-busca' }, ps.map((p) => {
+        const ck = el('input', { type: 'checkbox', checked: b.pesquisas.includes(p.id) });
+        ck.addEventListener('change', () => { b.pesquisas = ck.checked ? [...new Set([...b.pesquisas, p.id])] : b.pesquisas.filter((x) => x !== p.id); boxPesq.querySelector('summary').textContent = 'Incluir pesquisas ampliadas no PNCP (' + b.pesquisas.length + ' de ' + ps.length + ')'; });
+        return el('label', { class: 'check-linha' }, ck, ' ' + p.termo + ' (' + p.abrangencia + ', ' + p.lidas + ' licitações)');
+      })) : el('p', { class: 'ajuda' }, 'Nenhuma ainda. ', el('a', { class: 'link', href: '#etpampliada' }, 'Fazer uma pesquisa ampliada')));
+    }).catch(() => boxPesq.remove());
     rc(c, voltar('#etp', 'Entes e histórico'), cabecalho('Pesquisar itens', 'Itens parecidos de compras diferentes aparecem juntos numa série, com as quantidades por ano e os preços homologados.'),
-      comCnpj.length ? form : el('p', { class: 'msg msg-falta' }, 'Nenhum ente tem CNPJ no histórico ainda. Inclua os CNPJs na tela de entes.'), res);
+      comCnpj.length ? null : el('p', { class: 'msg msg-falta' }, 'Nenhum ente tem CNPJ no histórico ainda. Inclua os CNPJs na tela de entes ou use uma pesquisa ampliada.'), form, res);
     async function pesquisar() {
       if (!b.texto) { rc(res); return; }
-      if (!b.entes.length) { rc(res, el('p', { class: 'msg msg-falta' }, 'Marque ao menos um ente.')); return; }
+      if (!b.entes.length && !(b.pesquisas || []).length) { rc(res, el('p', { class: 'msg msg-falta' }, 'Marque ao menos um ente ou uma pesquisa ampliada.')); return; }
       ocupado(bBuscar, 'Pesquisando…'); carregando(res, 'Pesquisando no histórico…');
-      try { b.res = await D.etpBuscar({ texto: b.texto, cnpjs: cnpjsDosEntes(b.entes), anoIni: b.anoIni ? Number(b.anoIni) : null, anoFim: b.anoFim ? Number(b.anoFim) : null }); desenharRes(); }
+      let extra = [];
+      if ((b.pesquisas || []).length) { try { extra = (await D.etpPesquisas()).filter((p) => b.pesquisas.includes(p.id)).flatMap((p) => p.cnpjs); } catch (e) { } }
+      try { b.res = await D.etpBuscar({ texto: b.texto, cnpjs: [...new Set([...cnpjsDosEntes(b.entes), ...extra])], anoIni: b.anoIni ? Number(b.anoIni) : null, anoFim: b.anoFim ? Number(b.anoFim) : null }); desenharRes(); }
       catch (e) { rc(res, el('p', { class: 'msg msg-erro' }, e.message)); } finally { ocupado(bBuscar); }
     }
     function desenharRes() {
