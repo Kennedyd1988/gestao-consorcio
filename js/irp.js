@@ -358,7 +358,7 @@
         const certos = linhas.filter((x) => !x._conf.problemas.length);
         if (!certos.length) return;
         const subst = modoAtual() === 'substituir';
-        if (subst && !(await confirmar('Substituir itens', 'Os ' + its.length + ' item(ns) atuais serão excluídos e entram os ' + certos.length + ' da planilha. Continuar?', 'Substituir', true))) return;
+        if (subst && !(await confirmar('Substituir itens', 'Os itens atuais (' + its.length + ') serão excluídos e entram os da planilha (' + certos.length + '). Continuar?', 'Substituir', true))) return;
         ocupado(bSalvar, 'Gravando…');
         let feitos = 0;
         try {
