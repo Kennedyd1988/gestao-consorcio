@@ -457,17 +457,21 @@
         ocupado(bAdd, 'Incluindo…');
         try { await D.etpIncluirCnpj(o.id, c, fR.value); toast('CNPJ incluído.'); carregar(); } catch (e) { toast(e.message, true); ocupado(bAdd); }
       });
-      const linhaCnpj = (c, rot, extra) => {
-        const n = nomePncp(c);
-        return el('tr', null, el('td', { class: 'mono' }, O.formatarCnpj(c)), el('td', null, rot), el('td', null, n.nome || el('span', { class: 'ajuda' }, 'ainda não lido'), n.compras ? el('div', { class: 'ajuda' }, n.compras + ' compra(s) no histórico') : null),
-          el('td', null, extra && pode() ? el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: async () => { if (!(await confirmar('Tirar CNPJ', 'Tirar o CNPJ ' + O.formatarCnpj(c) + ' deste ente?', 'Tirar'))) return; try { await D.etpRemoverCnpj(o.id, c); carregar(); } catch (e) { toast(e.message, true); } } }, 'Tirar') : extra ? null : el('span', { class: 'ajuda' }, 'CNPJ do cadastro (aba Dados)')));
+      const linhaCnpj = (c, rot, extra, x) => {
+        const n = nomePncp(c), tce = x && x.origem === 'tce', soPreco = x && x.quantitativo === false;
+        const leitura = n.situacao === 'em_dia' && !Number(n.compras) ? el('div', { class: 'ajuda' }, 'Sem publicações no PNCP') : n.compras ? el('div', { class: 'ajuda' }, n.compras + ' compra(s) no histórico') : null;
+        return el('tr', null, el('td', { class: 'mono' }, O.formatarCnpj(c)),
+          el('td', null, rot, tce ? el('div', { class: 'ajuda' }, 'Veio do TCE-RN') : null),
+          el('td', null, soPreco ? el('span', { class: 'etiqueta etiqueta-rascunho' }, 'Só pesquisa de preços') : el('span', { class: 'etiqueta etiqueta-ativo' }, 'Preços e quantitativos')),
+          el('td', null, n.nome || el('span', { class: 'ajuda' }, 'ainda não lido'), leitura),
+          el('td', null, !extra ? el('span', { class: 'ajuda' }, 'CNPJ do cadastro (aba Dados)') : tce ? el('span', { class: 'ajuda' }, 'Automático') : pode() ? el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: async () => { if (!(await confirmar('Tirar CNPJ', 'Tirar o CNPJ ' + O.formatarCnpj(c) + ' deste ente?', 'Tirar'))) return; try { await D.etpRemoverCnpj(o.id, c); carregar(); } catch (e) { toast(e.message, true); } } }, 'Tirar') : null));
       };
       rc(box,
         el('h3', null, 'CNPJs do ente'),
-        el('p', { class: 'ajuda' }, 'Todos os CNPJs que compram em nome do ente (prefeitura, fundos municipais, câmara, autarquias). Servem para o histórico de compras no PNCP usado na pesquisa de preços e nas estimativas.'),
-        (principal || extras.length) ? tabela(['CNPJ', 'O que é', 'Nome no PNCP', ''], [principal ? linhaCnpj(principal, 'Principal', false) : null, ...extras.map((x) => linhaCnpj(x.cnpj, x.rotulo || 'Outro', true))].filter(Boolean)) : el('p', { class: 'msg msg-falta' }, 'Nenhum CNPJ. Informe o CNPJ principal na aba Dados do ente.'),
+        el('p', { class: 'ajuda' }, 'Todos os CNPJs que compram em nome do ente. Os das unidades do município no TCE-RN (prefeitura, fundos, câmara, previdência, autarquias) entram sozinhos e são lidos no PNCP. Todos servem para a pesquisa de preços; para os quantitativos do ente contam só a prefeitura e os fundos.'),
+        (principal || extras.length) ? tabela(['CNPJ', 'O que é', 'Uso', 'Nome no PNCP', ''], [principal ? linhaCnpj(principal, 'Principal', false) : null, ...extras.map((x) => linhaCnpj(x.cnpj, x.rotulo || 'Outro', true, x))].filter(Boolean)) : el('p', { class: 'msg msg-falta' }, 'Nenhum CNPJ. Informe o CNPJ principal na aba Dados do ente.'),
         pode() ? el('div', { class: 'filtros-linha' }, campo('fo-c', 'CNPJ', fC), campo('fo-r', 'O que é', fR), el('div', { class: 'campo' }, bAdd),
-          window.ETP_DIALOGOS ? el('div', { class: 'campo' }, el('button', { type: 'button', class: 'btn btn-texto', onclick: () => window.ETP_DIALOGOS.descobrir({ id: o.id, nome: o.nome, municipio: o.municipio, uf: o.uf, cnpjs: [principal, ...extras.map((x) => x.cnpj)].filter(Boolean) }, carregar) }, 'Descobrir no PNCP')) : null) : null,
+          window.ETP_DIALOGOS ? el('div', { class: 'campo' }, el('button', { type: 'button', class: 'btn btn-texto', onclick: () => window.ETP_DIALOGOS.descobrir({ id: o.id, nome: o.nome, municipio: o.municipio, uf: o.uf, cnpjs: [principal, ...extras.map((x) => x.cnpj)].filter(Boolean) }, carregar) }, 'Procurar outros no PNCP')) : null) : null,
         el('h3', null, 'Unidades no TCE-RN'),
         el('p', { class: 'ajuda' }, 'Unidades do município que mandam os empenhos ao TCE-RN (SIAI, Anexo 14). Marque as que contam como consumo do ente: em geral a prefeitura e os fundos.'),
         unidades.length ? tabela(['', 'Unidade', 'CNPJ', 'Empenhos lidos'], unidades.map((u) => {

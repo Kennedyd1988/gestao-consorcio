@@ -674,7 +674,7 @@
       async enteUnidadesTce(orgao) { return ok(await sb.rpc('ente_unidades_tce', { p_orgao: orgao })); },
       async entesConferirCnpj() { return ok(await sb.rpc('entes_conferir_cnpj')); },
       async enteDefinirCnpj(orgao, cnpj) { ok(await sb.rpc('ente_definir_cnpj', { p_orgao: orgao, p_cnpj: cnpj })); },
-      async enteCnpjsExtras(orgao) { return ok(await sb.from('etp_entes_cnpj').select('cnpj, rotulo').eq('orgao_id', orgao)); },
+      async enteCnpjsExtras(orgao) { return ok(await sb.from('etp_entes_cnpj').select('cnpj, rotulo, origem, quantitativo').eq('orgao_id', orgao).order('quantitativo', { ascending: false }).order('rotulo')); },
       async etpOrgaosNomes(cnpjs) { return cnpjs.length ? ok(await sb.from('etp_orgaos').select('cnpj, nome, situacao, compras, itens').in('cnpj', cnpjs)) : []; },
       async etpMetodologias() { return ok(await sb.from('etp_metodologias').select('*').order('padrao', { ascending: false }).order('nome')); },
       async etpSalvarMetodologia(m) {

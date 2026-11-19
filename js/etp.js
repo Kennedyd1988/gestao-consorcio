@@ -18,7 +18,8 @@
   const dataBR = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '—');
   const cnpjF = (c) => String(c || '').replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
   const soNum = (c) => String(c || '').replace(/\D/g, '');
-  const SIT = { na_fila: ['Na fila', 'etiqueta-pendente'], carregando: ['Carregando', 'etiqueta-editar'], em_dia: ['Em dia', 'etiqueta-ativo'], erro: ['Erro', 'etiqueta-inativo'], pausado: ['Pausado', 'etiqueta-rascunho'] };
+  const SIT = { na_fila: ['Na fila', 'etiqueta-pendente'], carregando: ['Carregando', 'etiqueta-editar'], em_dia: ['Em dia', 'etiqueta-ativo'], erro: ['Erro', 'etiqueta-inativo'], pausado: ['Pausado', 'etiqueta-rascunho'], sem_publicacoes: ['Sem publicações no PNCP', 'etiqueta-rascunho'] };
+  const etqUso = (x) => x.quantitativo === false ? el('span', { class: 'etiqueta etiqueta-rascunho', title: 'Câmara, previdência e autarquias entram na pesquisa de preços, mas não no histórico de quantidades do ente.' }, 'Só preços') : null;
   const etqSit = (s) => el('span', { class: 'etiqueta ' + (SIT[s] || SIT.na_fila)[1] }, (SIT[s] || SIT.na_fila)[0]);
   const ROTULOS = ['Prefeitura', 'Fundo Municipal de Saúde', 'Fundo Municipal de Educação', 'Fundo Municipal de Assistência Social', 'Câmara Municipal', 'Autarquia', 'Outro'];
   const munDoNome = (o) => o.municipio || String(o.nome || '').replace(/^munic[ií]pio de\s+/i, '').replace(/\/[A-Z]{2}$/, '');
@@ -34,7 +35,7 @@
   }
   // O PNCP chama o CNPJ por outro nome? (cadastro com CNPJ trocado)
   function nomeConfere(o, c) {
-    if (!c.nome_pncp) return true;
+    if (!c.nome_pncp || c.origem === 'tce') return true;
     const m = normal(munDoNome(o)).replace(/[^a-z0-9]/g, '');
     return !m || normal(c.nome_pncp).replace(/[^a-z0-9]/g, '').includes(m);
   }
@@ -112,7 +113,7 @@
         const tot = (k) => o.cnpjs.reduce((s, x) => s + Number(x[k] || 0), 0);
         return el('tr', null,
           el('td', null, el('a', { class: 'link-forte', href: '#etpente-' + o.id }, o.nome), o.uf ? el('div', { class: 'ajuda' }, [o.municipio, o.uf].filter(Boolean).join('/')) : null),
-          el('td', null, o.cnpjs.length ? o.cnpjs.map((x) => el('div', { class: 'linha-cnpj' }, el('span', { class: 'mono' }, cnpjF(x.cnpj)), ' ', el('span', { class: 'ajuda' }, x.rotulo), ' ', etqSit(x.situacao),
+          el('td', null, o.cnpjs.length ? o.cnpjs.map((x) => el('div', { class: 'linha-cnpj' }, el('span', { class: 'mono' }, cnpjF(x.cnpj)), ' ', el('span', { class: 'ajuda' }, x.rotulo), ' ', etqSit(x.situacao), ' ', etqUso(x),
               !nomeConfere(o, x) ? el('div', { class: 'msg-curta msg-falta' }, 'No PNCP este CNPJ é de ' + x.nome_pncp + '. Confira o CNPJ no Cadastro.') : null))
             : el('span', { class: 'etiqueta etiqueta-pendente' }, 'Sem CNPJ')),
           el('td', { class: 'num' }, n0(tot('compras'))), el('td', { class: 'num' }, n0(tot('itens'))), el('td', { class: 'num' }, n0(tot('contratos'))),
@@ -157,7 +158,7 @@
       return el('div', { class: 'cartao-cnpj' }, el('label', { class: 'check-linha' }, ck, el('strong', null, x.rotulo), ' ', el('span', { class: 'mono' }, cnpjF(x.cnpj))),
         el('div', { class: 'ajuda' }, x.nome_pncp || 'Ainda não lido no PNCP', ' · ', n0(x.compras), ' compra(s) · ', n0(x.itens), ' item(ns)'),
         !nomeConfere(o, x) ? el('div', { class: 'msg-curta msg-falta' }, 'No PNCP este CNPJ é de ' + x.nome_pncp + '. Confira o CNPJ no Cadastro.') : null,
-        el('div', { class: 'etiquetas-linha' }, etqSit(x.situacao), ...anos),
+        el('div', { class: 'etiquetas-linha' }, etqSit(x.situacao), etqUso(x), x.origem === 'tce' ? el('span', { class: 'etiqueta etiqueta-pendente', title: 'CNPJ incluído sozinho a partir das unidades do município no TCE-RN' }, 'TCE-RN') : null, ...anos),
         null);
     }));
     const corpo = el('div'), corpoK = el('div');
