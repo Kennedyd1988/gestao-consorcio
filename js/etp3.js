@@ -747,4 +747,5 @@
   };
 
   N.PENDENCIAS.etp = N.PENDENCIAS.etp || (() => null);
+  window.ETP3 = { calcular, analisarPrecos, porteDe, novoModelo, ipcaFator };
 })();
