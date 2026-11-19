@@ -147,6 +147,26 @@
       CONTATO: [c.email_institucional ? 'pelo e-mail ' + c.email_institucional : null, end ? 'na sede, ' + end + (c.horario ? ', ' + c.horario : '') : null].filter(Boolean).join(' ou ') || 'pelos canais oficiais do consórcio',
     };
   }
+  // Tabela de itens do edital: Lote e Código só entram se algum item tiver
+  function tabelaItensWord(itens) {
+    const temLote = itens.some((t) => t.lote), temCod = itens.some((t) => t.codigo), temQtd = itens.some((t) => t.qtd_estimada != null && t.qtd_estimada !== '');
+    const cab = ['ITEM'], larg = [700];
+    if (temLote) { cab.push('LOTE'); larg.push(800); }
+    if (temCod) { cab.push('CÓDIGO'); larg.push(1100); }
+    cab.push('DESCRIÇÃO TÉCNICA', 'UNIDADE'); larg.push(0, 1200);
+    if (temQtd) { cab.push('QTD. ESTIMADA'); larg.push(1200); }
+    larg[cab.indexOf('DESCRIÇÃO TÉCNICA')] = 8504 - larg.reduce((s, w) => s + w, 0);
+    const linhas = itens.map((t) => {
+      const l = [String(t.numero)];
+      if (temLote) l.push(t.lote || '');
+      if (temCod) l.push(t.codigo || '');
+      l.push(t.descricao, t.unidade);
+      if (temQtd) l.push(t.qtd_estimada != null && t.qtd_estimada !== '' ? num(t.qtd_estimada) : '');
+      return l;
+    });
+    return tabelaWord(cab, linhas, larg);
+  }
+
   // d = { irp, itens, signatario:{nome,cargo}, cimop: configurações do consórcio, link }
   function corpoEdital(d) {
     const { irp } = d; const c = d.cimop || {};
@@ -157,7 +177,7 @@
     x += par('Processo Administrativo nº ' + irp.processo, { jc: 'center', depois: 280 });
     const blocos = String(c.modelo_irp_edital || MODELO_EDITAL).replace(/\r/g, '').split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
     for (const b of blocos) {
-      if (b === '{ITENS}') { x += tabelaWord(['ITEM', 'DESCRIÇÃO TÉCNICA', 'UNIDADE'], d.itens.map((t) => [String(t.numero), t.descricao, t.unidade]), [850, 6254, 1400]); continue; }
+      if (b === '{ITENS}') { x += tabelaItensWord(d.itens); continue; }
       const t = preencher(b.replace(/\n/g, ' '), v);
       if (/^#\s+/.test(t)) x += titulo(t.replace(/^#\s+/, ''));
       else if (/^-\s+/.test(t)) x += par(t.replace(/^-\s+/, ''), { recuo: 567 });
@@ -284,8 +304,8 @@
     texto('2.1. O órgão ou entidade acima identificado manifesta interesse em participar da IRP em epígrafe, como órgão participante da futura Ata de Registro de Preços, nos itens e quantitativos abaixo, de caráter estimativo:', { sz: 9.5 });
     espaco(20);
     doc.autoTable({ startY: y, margin: { left: M, right: M, top: topo, bottom: H - limiteY() }, theme: 'grid',
-      head: [['ITEM', 'DESCRIÇÃO TÉCNICA', 'UNIDADE', 'QUANTIDADE ESTIMADA']],
-      body: d.itens.map((t) => [t.numero, t.descricao, t.unidade, num(t.qtd)]),
+      head: [['ITEM', 'DESCRIÇÃO', 'UNIDADE', 'QUANTIDADE ESTIMADA']],
+      body: d.itens.map((t) => [t.numero, t.resumo || t.descricao, t.unidade, num(t.qtd)]),
       styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 1.8, textColor: TEXTO, lineColor: LINHA, lineWidth: 0.2, valign: 'middle' },
       headStyles: { fillColor: TOM, textColor: NAVY, fontStyle: 'bold', halign: 'center' },
       columnStyles: { 0: { halign: 'center', cellWidth: 14 }, 2: { halign: 'center', cellWidth: 24 }, 3: { halign: 'right', cellWidth: 32 } },
@@ -413,6 +433,109 @@
     return doc.output('blob');
   }
 
+  // ================================================================ PLANILHA DE ITENS (modelo e importação)
+  const COLS_ITENS = [
+    ['numero', 'Item nº', 8, ['item', 'itemn', 'itemno', 'n', 'no', 'numero', 'itemnumero', 'nitem', 'nodoitem']],
+    ['lote', 'Lote/Grupo', 11, ['lote', 'grupo', 'lotegrupo']],
+    ['codigo', 'Código CATMAT/CATSER', 18, ['codigo', 'catmat', 'catser', 'codigocatmatcatser', 'catmatcatser', 'codigocatmat', 'codigocatser']],
+    ['descricao', 'Descrição técnica', 60, ['descricao', 'descricaotecnica', 'especificacao', 'especificacaotecnica', 'descricaocompleta']],
+    ['resumo', 'Especificação resumida', 40, ['especificacaoresumida', 'resumo', 'descricaoresumida', 'resumida']],
+    ['unidade', 'Unidade', 12, ['unidade', 'und', 'un', 'unid', 'unidadedemedida', 'unidademedida']],
+    ['qtd_estimada', 'Qtd. estimada pelo consórcio', 16, ['qtdestimadapeloconsorcio', 'qtdestimada', 'quantidadeestimada', 'quantidade', 'qtd', 'estimativa']],
+  ];
+  const UNIDADES_ITENS = ['Unidade', 'Caixa', 'Pacote', 'Kit', 'Litro', 'Quilo', 'Metro', 'Metro quadrado', 'Metro cúbico', 'Tonelada', 'Serviço', 'Hora', 'Diária', 'Mês'];
+  const chaveCab = (v) => String(v == null ? '' : v).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const numPlan = (v) => {
+    if (v == null || v === '') return null;
+    if (typeof v === 'number') return v;
+    const t = String(v).trim().replace(/\s/g, '');
+    const n = Number(/,\d+$/.test(t) ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, ''));
+    return Number.isFinite(n) ? n : NaN;
+  };
+  // Linha no formato do modelo (também usada no mapa consolidado)
+  const linhaModelo = (t) => [t.numero, t.lote || '', t.codigo || '', t.descricao || '', t.resumo || '', t.unidade || '', t.qtd_estimada == null || t.qtd_estimada === '' ? '' : Number(t.qtd_estimada)];
+
+  function modeloItens(itens, sigla) {
+    const X = window.XLSX;
+    const cab = COLS_ITENS.map((c) => c[1]);
+    const corpo = itens && itens.length ? itens.map(linhaModelo) : [
+      [1, '1', '', 'Exemplo: cadeira escolar empilhável, estrutura em tubo de aço, assento e encosto em polipropileno, cor azul, conforme norma ABNT NBR 14006.', 'Cadeira escolar empilhável', 'Unidade', 500],
+      [2, '1', '', 'Exemplo: mesa escolar individual, tampo em MDF 18 mm com revestimento melamínico, estrutura em aço, conforme norma ABNT NBR 14006.', 'Mesa escolar individual', 'Unidade', ''],
+    ];
+    const wb = X.utils.book_new();
+    const ws = X.utils.aoa_to_sheet([cab, ...corpo]);
+    ws['!cols'] = COLS_ITENS.map((c) => ({ wch: c[2] }));
+    ws['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(1, corpo.length), c: cab.length - 1 } }) };
+    X.utils.book_append_sheet(wb, ws, 'Itens');
+    const sg = sigla || 'consórcio';
+    const inst = [
+      ['Como preencher a planilha de itens da IRP'],
+      [''],
+      ['Preencha a aba "Itens", uma linha por item. Não mude os títulos da primeira linha. Apague as linhas de exemplo.'],
+      [''],
+      ['Coluna', 'Obrigatória?', 'Como preencher'],
+      ['Item nº', 'Sim', 'Número inteiro, sem repetir. Em branco, o sistema numera em sequência.'],
+      ['Lote/Grupo', 'Não', 'Lote ou grupo do item na futura licitação (ex.: 1, 2, A).'],
+      ['Código CATMAT/CATSER', 'Não', 'Código do item no catálogo do Governo Federal (CATMAT para materiais, CATSER para serviços).'],
+      ['Descrição técnica', 'Sim', 'Descrição completa, como deve sair no edital da IRP.'],
+      ['Especificação resumida', 'Não', 'Texto curto mostrado aos entes no formulário. Em branco, o formulário mostra a descrição técnica.'],
+      ['Unidade', 'Sim', 'Unidade de medida. Em branco, entra "Unidade". Sugestões abaixo.'],
+      ['Qtd. estimada pelo consórcio', 'Não', 'Quantidade que o ' + sg + ' já estima, só como referência para os entes. Não conta como manifestação.'],
+      [''],
+      ['Unidades sugeridas'],
+      ...UNIDADES_ITENS.map((u) => [u]),
+    ];
+    const wi = X.utils.aoa_to_sheet(inst); wi['!cols'] = [{ wch: 30 }, { wch: 14 }, { wch: 100 }];
+    X.utils.book_append_sheet(wb, wi, 'Instruções');
+    return new Blob([X.write(wb, { type: 'array', bookType: 'xlsx' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+
+  // Lê a planilha: devolve { linhas:[{numero,lote,codigo,descricao,resumo,unidade,qtd_estimada,_linha}], colunas:[...], aviso }
+  async function lerPlanilhaItens(arquivo) {
+    const X = window.XLSX;
+    const wb = X.read(await arquivo.arrayBuffer());
+    const nome = wb.SheetNames.find((n) => chaveCab(n) === 'itens') || wb.SheetNames.find((n) => chaveCab(n) !== 'instrucoes') || wb.SheetNames[0];
+    const m = X.utils.sheet_to_json(wb.Sheets[nome], { header: 1, defval: '', raw: true, blankrows: false });
+    const iCab = m.findIndex((l) => l.some((v) => chaveCab(v).startsWith('descri') || chaveCab(v).startsWith('especificacaotecnica')));
+    if (iCab < 0) throw new Error('Não encontrei a coluna "Descrição técnica". Use a planilha modelo.');
+    const mapa = {};
+    m[iCab].forEach((v, k) => {
+      const ch = chaveCab(v); if (!ch) return;
+      const col = COLS_ITENS.find((c) => c[3].includes(ch)) || (ch.startsWith('descri') && !ch.includes('resum') ? COLS_ITENS[3] : null) || (ch.includes('resum') ? COLS_ITENS[4] : null);
+      if (col && mapa[col[0]] == null) mapa[col[0]] = k;
+    });
+    const linhas = [];
+    for (let r = iCab + 1; r < m.length; r++) {
+      const l = m[r]; const v = (c) => (mapa[c] == null ? '' : l[mapa[c]]);
+      if (COLS_ITENS.every((c) => String(v(c[0])).trim() === '')) continue;
+      const n = numPlan(v('numero'));
+      linhas.push({ _linha: r + 1, numero: n, lote: String(v('lote')).trim(), codigo: String(v('codigo')).trim(), descricao: String(v('descricao')).trim(),
+        resumo: String(v('resumo')).trim(), unidade: String(v('unidade')).trim(), qtd_estimada: numPlan(v('qtd_estimada')) });
+    }
+    return { linhas, colunas: COLS_ITENS.filter((c) => mapa[c[0]] != null).map((c) => c[1]), aba: nome };
+  }
+
+  // Confere as linhas: numera as vazias e devolve problemas por linha
+  function conferirItens(linhas, existentes) {
+    const usados = new Set((existentes || []).map((t) => t.numero));
+    let prox = Math.max(0, ...linhas.map((x) => (Number.isInteger(x.numero) && x.numero > 0 ? x.numero : 0)), ...(existentes || []).map((t) => t.numero)) + 1;
+    const vistos = new Set();
+    return linhas.map((x) => {
+      const o = Object.assign({}, x, { problemas: [], avisos: [] });
+      if (o.numero == null) { o.numero = prox++; o.avisos.push('Número dado pelo sistema'); }
+      if (!Number.isInteger(o.numero) || o.numero <= 0) o.problemas.push('Número inválido');
+      else if (vistos.has(o.numero)) o.problemas.push('Número repetido na planilha');
+      else if (usados.has(o.numero)) o.problemas.push('Número já cadastrado nesta IRP');
+      vistos.add(o.numero);
+      if (!o.descricao) o.problemas.push('Sem descrição técnica');
+      else if (o.descricao.length > 4000) o.problemas.push('Descrição com mais de 4.000 caracteres');
+      if (!o.unidade) { o.unidade = 'Unidade'; o.avisos.push('Unidade vazia: entra "Unidade"'); }
+      if (o.qtd_estimada != null && !(o.qtd_estimada >= 0)) o.problemas.push('Quantidade estimada inválida');
+      if (o.resumo && o.resumo.length > 500) o.problemas.push('Especificação resumida com mais de 500 caracteres');
+      return o;
+    });
+  }
+
   // ================================================================ MAPA CONSOLIDADO (Excel)
   function mapaExcel(d) {
     const X = window.XLSX;
@@ -427,6 +550,13 @@
     d.itens.forEach((t) => { total['Item ' + t.numero + ' (aceito)'] = linhas.reduce((s, l) => s + Number(l['Item ' + t.numero + ' (aceito)'] || 0), 0); });
     linhas.push(total);
     const wb = X.utils.book_new();
+    // Itens consolidados: mesma ordem de colunas da planilha modelo, mais os totais
+    const somaItem = (t, campo) => d.respostas.flatMap((r) => r.itens.filter((x) => x.item && x.item.id === t.id)).reduce((s, x) => s + Number(x[campo] || 0), 0);
+    const entesItem = (t) => new Set(d.respostas.filter((r) => r.itens.some((x) => x.item && x.item.id === t.id && Number(x.qtd_aceita || 0) > 0)).map((r) => r.orgao.id)).size;
+    const wsI = X.utils.aoa_to_sheet([[...COLS_ITENS.map((c) => c[1]), 'Qtd. informada', 'Qtd. aceita', 'Entes com quantidade aceita'],
+      ...d.itens.map((t) => [...linhaModelo(t), somaItem(t, 'qtd_informada'), somaItem(t, 'qtd_aceita'), entesItem(t)])]);
+    wsI['!cols'] = [...COLS_ITENS.map((c) => ({ wch: c[2] })), { wch: 14 }, { wch: 12 }, { wch: 14 }];
+    X.utils.book_append_sheet(wb, wsI, 'Itens consolidados');
     const ws = X.utils.json_to_sheet(linhas); ws['!cols'] = [{ wch: 48 }, { wch: 20 }, { wch: 16 }, ...d.itens.map(() => ({ wch: 14 }))];
     X.utils.book_append_sheet(wb, ws, 'Mapa consolidado');
     const man = d.respostas.flatMap((r) => r.itens.map((x) => ({ 'Protocolo': r.protocolo, 'Órgão ou entidade': r.orgao.nome, 'Origem': { formulario: 'Formulário', etp: 'ETP', inclusao_posterior: 'Inclusão posterior' }[r.origem],
@@ -437,6 +567,6 @@
     return new Blob([X.write(wb, { type: 'array', bookType: 'xlsx' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   }
 
-  window.IRP_DOCS = { gerarEdital, nomeEdital, gerarFormulario, nomeFormulario, gerarConsolidacao, mapaExcel, numeroIrp, dataBR, extenso, VINCULO, cnpjF, num,
+  window.IRP_DOCS = { modeloItens, lerPlanilhaItens, conferirItens, UNIDADES_ITENS, gerarEdital, nomeEdital, gerarFormulario, nomeFormulario, gerarConsolidacao, mapaExcel, numeroIrp, dataBR, extenso, VINCULO, cnpjF, num,
     MODELO_EDITAL, MODELO_DECLARACOES, CAMPOS_EDITAL, preencher };
 })();

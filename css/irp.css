@@ -26,3 +26,18 @@
 .tabela td input:focus, .tabela td select:focus { outline: none; border-color: var(--acento, #0a9668); box-shadow: 0 0 0 3px rgba(10,150,104,.2); }
 .acoes-formulario { display: flex; justify-content: flex-end; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
 @media (max-width: 600px) { .acoes-formulario .btn { width: 100%; } }
+
+/* Importação da planilha de itens da IRP */
+.dialogo.dialogo-importar { width: min(1280px, calc(100vw - 24px)); }
+.importar-itens .zona-arquivo { display: block; border: 2px dashed var(--line); border-radius: 14px; padding: 22px; text-align: center; cursor: pointer; background: #f8fbfe; margin: 10px 0; }
+.importar-itens .zona-arquivo:hover, .importar-itens .zona-arquivo.arrastando, .importar-itens .zona-arquivo:focus-within { border-color: var(--acento, #0a9668); background: #eef8f3; }
+.importar-itens .linha-escolha { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin: 8px 0; }
+.tabela-edicao td { vertical-align: top; }
+.tabela-edicao input, .tabela-edicao textarea { width: 100%; min-width: 0; font: inherit; font-size: 13px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--text); }
+.tabela-edicao textarea { min-width: 220px; resize: vertical; }
+.tabela-edicao .campo-num { width: 84px; }
+.tabela-edicao .campo-curto { width: 100px; }
+.tabela-edicao .etiqueta { margin: 0 4px 4px 0; }
+.tabela-edicao tr.linha-erro td { background: #fdf5f5; }
+.detalhe-item summary { cursor: pointer; color: var(--brand, #0d4fc4); font-size: 13px; margin-top: 4px; }
+.detalhe-item p { margin: 6px 0 0; font-size: 13px; color: var(--text-dim); }

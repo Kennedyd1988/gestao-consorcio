@@ -8,3 +8,5 @@ window.CONFIG = {
   SUPABASE_ANON_KEY: 'sb_publishable_dVqfw-uGUPeLJD1HoNAe4w_-yxNZbUx',
   SCHEMA: 'consorcio'
 };
+// Prévia sem banco: ?demo no endereço abre a demonstração (dados só no navegador de quem testa).
+if (/[?&]demo\b/.test(location.search)) window.CONFIG.SUPABASE_URL = '';

@@ -233,28 +233,44 @@
   }
 
   // ---------- Itens
+  const qtdBR = (v) => (v == null || v === '' ? '' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 }));
   function abaItens(i) {
     const its = itensDe(i.id), rasc = i.situacao === 'rascunho' && pode();
+    const nomeArq = (sufixo) => `IRP ${nIrp(i).replace('/', '-')} - ${sufixo}.xlsx`;
+    const unidades = () => el('datalist', { id: 'unidades-irp' }, DOC.UNIDADES_ITENS.map((u) => el('option', { value: u })));
+    const registro = (x) => ({ numero: x.numero, lote: (x.lote || '').trim() || null, codigo: (x.codigo || '').trim() || null, descricao: x.descricao.trim(),
+      resumo: (x.resumo || '').trim() || null, unidade: (x.unidade || '').trim() || 'Unidade', qtd_estimada: x.qtd_estimada == null || x.qtd_estimada === '' ? null : Number(x.qtd_estimada) });
+
     const formItem = (t) => {
-      const f = { numero: el('input', { type: 'number', min: 1, value: t.numero || (Math.max(0, ...its.map((x) => x.numero)) + 1) }), desc: area(t.descricao, { rows: 4, maxlength: 4000 }),
-        unid: txt(t.unidade || 'Unidade', { maxlength: 40, list: 'unidades-irp' }) };
+      const f = { numero: el('input', { type: 'number', min: 1, value: t.numero || (Math.max(0, ...its.map((x) => x.numero)) + 1) }),
+        lote: txt(t.lote || '', { maxlength: 30 }), codigo: txt(t.codigo || '', { maxlength: 30 }),
+        desc: area(t.descricao, { rows: 5, maxlength: 4000 }), resumo: area(t.resumo || '', { rows: 2, maxlength: 500 }),
+        unid: txt(t.unidade || 'Unidade', { maxlength: 40, list: 'unidades-irp' }),
+        qtd: el('input', { type: 'number', min: 0, step: 'any', value: t.qtd_estimada == null ? '' : Number(t.qtd_estimada) }) };
       const b = el('button', { type: 'button', class: 'btn btn-primario' }, 'Salvar');
-      const d = abrirDialogo(t.id ? 'Editar item' : 'Novo item', el('div', null, el('datalist', { id: 'unidades-irp' }, ['Unidade', 'Caixa', 'Pacote', 'Kit', 'Litro', 'Quilo', 'Metro', 'Serviço', 'Mês', 'Diária'].map((u) => el('option', { value: u }))),
-        el('div', { class: 'grade-campos' }, campo('ft-num', 'Item nº', f.numero, null, true), campo('ft-un', 'Unidade', f.unid, null, true)), campo('ft-desc', 'Descrição técnica', f.desc, null, true)),
+      const d = abrirDialogo(t.id ? 'Editar item' : 'Novo item', el('div', null, unidades(),
+        el('div', { class: 'grade-campos' }, campo('ft-num', 'Item nº', f.numero, null, true), campo('ft-lote', 'Lote/Grupo', f.lote), campo('ft-cod', 'Código CATMAT/CATSER', f.codigo)),
+        campo('ft-desc', 'Descrição técnica', f.desc, 'Sai completa no edital da IRP.', true),
+        campo('ft-res', 'Especificação resumida', f.resumo, 'Opcional. É o texto que o ente vê no formulário; em branco, ele vê a descrição técnica.'),
+        el('div', { class: 'grade-campos' }, campo('ft-un', 'Unidade', f.unid, null, true), campo('ft-qtd', 'Qtd. estimada pelo consórcio', f.qtd, 'Opcional. Só referência para os entes.'))),
       [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), b], true);
       b.addEventListener('click', async () => {
         const n = Number(f.numero.value);
-        if (!marcarErro(f.numero, n > 0 && !its.some((x) => x.numero === n && x.id !== t.id) ? '' : 'Número inválido ou repetido.')) return;
+        if (!marcarErro(f.numero, Number.isInteger(n) && n > 0 && !its.some((x) => x.numero === n && x.id !== t.id) ? '' : 'Número inválido ou repetido.')) return;
         if (!marcarErro(f.desc, f.desc.value.trim() ? '' : 'Informe a descrição.')) return;
+        if (!marcarErro(f.qtd, f.qtd.value === '' || Number(f.qtd.value) >= 0 ? '' : 'Quantidade inválida.')) return;
         ocupado(b, 'Salvando…');
-        try { await D.salvar('irp_itens', { ...(t.id ? { id: t.id } : { irp_id: i.id }), numero: n, descricao: f.desc.value.trim(), unidade: f.unid.value.trim() || 'Unidade' }); d.close(); await depois('Item salvo.'); }
-        catch (e) { toast(e.message, true); ocupado(b); }
+        try {
+          await D.salvar('irp_itens', { ...(t.id ? { id: t.id } : { irp_id: i.id }), ...registro({ numero: n, lote: f.lote.value, codigo: f.codigo.value, descricao: f.desc.value, resumo: f.resumo.value, unidade: f.unid.value, qtd_estimada: f.qtd.value }) });
+          d.close(); await depois('Item salvo.');
+        } catch (e) { toast(e.message, true); ocupado(b); }
       });
     };
+
     const colar = () => {
       const t = area('', { rows: 10, placeholder: 'Descrição<TAB>Unidade (uma linha por item, copiada do Excel ou do Word)' });
       const b = el('button', { type: 'button', class: 'btn btn-primario' }, 'Incluir itens');
-      const d = abrirDialogo('Colar itens da planilha', el('div', null, el('p', null, 'Copie as colunas Descrição e Unidade da planilha (ou só a descrição) e cole abaixo. Se a primeira coluna for o número do item, ele é usado.'), campo('fc-col', 'Itens', t)),
+      const d = abrirDialogo('Colar itens da planilha', el('div', null, el('p', null, 'Copie as colunas Descrição e Unidade da planilha (ou só a descrição) e cole abaixo. Se a primeira coluna for o número do item, ele é usado. Para lote, código, resumo e quantidade estimada, use "Importar planilha".'), campo('fc-col', 'Itens', t)),
         [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), b], true);
       b.addEventListener('click', async () => {
         let prox = Math.max(0, ...its.map((x) => x.numero)) + 1; const novos = [];
@@ -270,13 +286,108 @@
         try { for (const x of novos) await D.salvar('irp_itens', x); d.close(); await depois(novos.length + ' item(ns) incluído(s).'); } catch (e) { toast(e.message, true); ocupado(b); }
       });
     };
+
+    // Importar a planilha modelo: lê, confere numa tabela editável e grava
+    const importar = () => {
+      const entrada = el('input', { type: 'file', accept: '.xlsx,.xls,.csv', class: 'sr' });
+      const zona = el('label', { class: 'zona-arquivo', for: 'irp-imp-arq' }, el('strong', null, 'Escolher a planilha'), el('span', null, ' ou arraste o arquivo para cá (.xlsx, .xls ou .csv)'));
+      entrada.id = 'irp-imp-arq';
+      const modo = el('div', { class: 'linha-escolha' });
+      const conferencia = el('div');
+      const resumoMsg = el('div');
+      const bSalvar = el('button', { type: 'button', class: 'btn btn-primario', disabled: true }, 'Gravar itens');
+      let linhas = [];
+      const modoAtual = () => (its.length ? (modo.querySelector('input:checked') || {}).value || 'acrescentar' : 'acrescentar');
+      if (its.length) rc(modo, el('span', { class: 'ajuda' }, 'Esta IRP já tem ' + its.length + ' item(ns):'),
+        el('label', null, el('input', { type: 'radio', name: 'irp-imp-modo', value: 'acrescentar', checked: true }), ' Acrescentar aos atuais'),
+        el('label', null, el('input', { type: 'radio', name: 'irp-imp-modo', value: 'substituir' }), ' Substituir todos'));
+      const desenhar = () => {
+        const conf = DOC.conferirItens(linhas.map((x) => Object.assign({}, x, { numero: x._numeroOriginal })), modoAtual() === 'substituir' ? [] : its);
+        conf.forEach((c, k) => { linhas[k].numero = c.numero; linhas[k].unidade = c.unidade; linhas[k]._conf = c; });
+        const ruins = conf.filter((c) => c.problemas.length).length;
+        rc(resumoMsg, !linhas.length ? null : el('p', { class: 'msg ' + (ruins ? 'msg-falta' : 'msg-ok') },
+          linhas.length + ' item(ns) lido(s). ' + (ruins ? ruins + ' com problema: corrija na tabela abaixo (as linhas com problema não são gravadas).' : 'Tudo certo para gravar.')));
+        bSalvar.disabled = !linhas.length || conf.length === ruins;
+        bSalvar.textContent = ruins && conf.length > ruins ? 'Gravar os ' + (conf.length - ruins) + ' certos' : 'Gravar itens';
+        const cel = (x, campoNome, tipo, extra) => {
+          const e = tipo === 'area' ? el('textarea', Object.assign({ rows: 2 }, extra)) : el('input', Object.assign({ type: tipo || 'text' }, extra));
+          e.value = x[campoNome] == null ? '' : x[campoNome];
+          e.addEventListener('change', () => {
+            if (campoNome === 'numero') x._numeroOriginal = e.value === '' ? null : Number(e.value);
+            else if (campoNome === 'qtd_estimada') x.qtd_estimada = e.value === '' ? null : Number(e.value);
+            else x[campoNome] = e.value;
+            desenhar();
+          });
+          return e;
+        };
+        rc(conferencia, linhas.length ? el('div', { class: 'tabela-rolagem' }, el('table', { class: 'tabela tabela-edicao' },
+          el('thead', null, el('tr', null, ['Linha', 'Item nº', 'Lote', 'Código', 'Descrição técnica', 'Especificação resumida', 'Unidade', 'Qtd. estimada', 'Situação'].map((h) => el('th', null, h)))),
+          el('tbody', null, linhas.map((x) => el('tr', { class: x._conf.problemas.length ? 'linha-erro' : '' },
+            el('td', { class: 'num' }, x._linha),
+            el('td', null, cel(x, 'numero', 'number', { min: 1, class: 'campo-num' })),
+            el('td', null, cel(x, 'lote', 'text', { maxlength: 30, class: 'campo-curto' })),
+            el('td', null, cel(x, 'codigo', 'text', { maxlength: 30, class: 'campo-curto' })),
+            el('td', null, cel(x, 'descricao', 'area', { maxlength: 4000 })),
+            el('td', null, cel(x, 'resumo', 'area', { maxlength: 500 })),
+            el('td', null, cel(x, 'unidade', 'text', { maxlength: 40, list: 'unidades-irp', class: 'campo-curto' })),
+            el('td', null, cel(x, 'qtd_estimada', 'number', { min: 0, step: 'any', class: 'campo-num' })),
+            el('td', null, x._conf.problemas.length ? x._conf.problemas.map((p) => el('span', { class: 'etiqueta etiqueta-inativo' }, p))
+              : [el('span', { class: 'etiqueta etiqueta-ativo' }, 'Certo'), ...x._conf.avisos.map((p) => el('span', { class: 'etiqueta etiqueta-pendente' }, p))])))))) : null);
+      };
+      modo.addEventListener('change', desenhar);
+      const ler = async (arq) => {
+        if (!arq) return;
+        try {
+          const r = await DOC.lerPlanilhaItens(arq);
+          linhas = r.linhas.map((x) => Object.assign(x, { _numeroOriginal: x.numero }));
+          if (!linhas.length) { toast('A planilha não tem itens preenchidos.', true); return; }
+          zona.querySelector('strong').textContent = arq.name;
+          desenhar();
+        } catch (e) { toast(e.message, true); }
+      };
+      entrada.addEventListener('change', () => ler(entrada.files[0]));
+      zona.addEventListener('dragover', (ev) => { ev.preventDefault(); zona.classList.add('arrastando'); });
+      zona.addEventListener('dragleave', () => zona.classList.remove('arrastando'));
+      zona.addEventListener('drop', (ev) => { ev.preventDefault(); zona.classList.remove('arrastando'); ler(ev.dataTransfer.files[0]); });
+      const d = abrirDialogo('Importar itens da planilha', el('div', { class: 'importar-itens' }, unidades(),
+        el('p', null, 'Use a planilha modelo (botão "Baixar modelo"). Confira os itens na tabela antes de gravar; dá para corrigir direto nela.'),
+        entrada, zona, modo, resumoMsg, conferencia),
+      [el('button', { type: 'button', class: 'btn btn-claro', onclick: () => d.close() }, 'Cancelar'), bSalvar], true);
+      d.classList.add('dialogo-importar');
+      bSalvar.addEventListener('click', async () => {
+        const certos = linhas.filter((x) => !x._conf.problemas.length);
+        if (!certos.length) return;
+        const subst = modoAtual() === 'substituir';
+        if (subst && !(await confirmar('Substituir itens', 'Os ' + its.length + ' item(ns) atuais serão excluídos e entram os ' + certos.length + ' da planilha. Continuar?', 'Substituir', true))) return;
+        ocupado(bSalvar, 'Gravando…');
+        let feitos = 0;
+        try {
+          if (subst) for (const t of its) await D.excluir('irp_itens', t.id);
+          for (const x of certos) { await D.salvar('irp_itens', { irp_id: i.id, ...registro(x) }); feitos++; }
+          d.close(); await depois(feitos + ' item(ns) gravado(s)' + (linhas.length > certos.length ? '; ' + (linhas.length - certos.length) + ' com problema ficaram de fora.' : '.'));
+        } catch (e) { toast((feitos ? feitos + ' item(ns) gravado(s) antes do erro. ' : '') + e.message, true); ocupado(bSalvar); if (feitos) await depois(); }
+      });
+    };
+
+    const baixarModelo = async () => { try { await baixar(nomeArq('planilha de itens (modelo)'), DOC.modeloItens([], N.sigla && N.sigla())); } catch (e) { toast(e.message, true); } };
+    const baixarItens = async () => { try { await baixar(nomeArq('itens'), DOC.modeloItens(its, N.sigla && N.sigla())); } catch (e) { toast(e.message, true); } };
     const excluir = async (t) => { if (!(await confirmar('Excluir item', 'Excluir o item ' + t.numero + '?', 'Excluir', true))) return; try { await D.excluir('irp_itens', t.id); await depois('Item excluído.'); } catch (e) { toast(e.message, true); } };
+    const temLote = its.some((t) => t.lote), temCod = its.some((t) => t.codigo), temQtd = its.some((t) => t.qtd_estimada != null);
+    const cab = ['Item', temLote ? 'Lote' : null, temCod ? 'Código' : null, 'Descrição técnica', 'Unidade', temQtd ? 'Qtd. estimada' : null, ''].filter((x) => x !== null);
     return el('div', null,
       el('div', { class: 'cabecalho-secao' }, el('p', { class: 'ajuda' }, rasc ? 'Os itens só podem ser alterados enquanto a IRP é rascunho.' : 'A IRP já foi aberta: os itens estão travados.'),
-        rasc ? el('div', { class: 'botoes-linha' }, el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: colar }, 'Colar da planilha'), el('button', { type: 'button', class: 'btn btn-primario btn-p', onclick: () => formItem({}) }, '+ Novo item')) : null),
-      its.length ? tabela(['Item', 'Descrição técnica', 'Unidade', ''], its.map((t) => el('tr', null, el('td', { class: 'num' }, t.numero), el('td', { class: 'texto-longo' }, t.descricao), el('td', null, t.unidade),
+        el('div', { class: 'botoes-linha' },
+          rasc ? el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: baixarModelo }, 'Baixar modelo') : null,
+          its.length ? el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: baixarItens }, 'Baixar itens em Excel') : null,
+          rasc ? el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: importar }, 'Importar planilha') : null,
+          rasc ? el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: colar }, 'Colar da planilha') : null,
+          rasc ? el('button', { type: 'button', class: 'btn btn-primario btn-p', onclick: () => formItem({}) }, '+ Novo item') : null)),
+      its.length ? tabela(cab, its.map((t) => el('tr', null, el('td', { class: 'num' }, t.numero),
+        temLote ? el('td', null, t.lote || '') : null, temCod ? el('td', null, t.codigo || '') : null,
+        el('td', { class: 'texto-longo' }, t.descricao, t.resumo ? el('div', { class: 'ajuda' }, 'Resumo para o ente: ' + t.resumo) : null),
+        el('td', null, t.unidade), temQtd ? el('td', { class: 'num' }, qtdBR(t.qtd_estimada)) : null,
         el('td', { class: 'acoes' }, rasc ? [el('button', { type: 'button', class: 'btn btn-claro btn-p', onclick: () => formItem(t) }, 'Editar'), el('button', { type: 'button', class: 'btn btn-texto btn-p', onclick: () => excluir(t) }, 'Excluir')] : null))))
-        : el('p', { class: 'vazio' }, 'Nenhum item cadastrado.'));
+        : el('p', { class: 'vazio' }, rasc ? 'Nenhum item cadastrado. Baixe o modelo, preencha e use "Importar planilha", ou cadastre um por um.' : 'Nenhum item cadastrado.'));
   }
 
   // ---------- Divulgação: edital, link, e-mail e WhatsApp
@@ -783,7 +894,15 @@ ${cf.sigla || SG()}`;
       el('section', { class: 'cartao' }, el('h2', null, '2. Itens e quantidades estimadas'),
         Object.keys(etp).length ? el('p', { class: 'msg msg-info' }, 'As quantidades já previstas no ETP para este ente vieram preenchidas. Confirme ou ajuste.') : null,
         el('p', { class: 'ajuda' }, 'Informe a quantidade só dos itens de interesse, na unidade indicada. Deixe em branco os demais.'),
-        tabela(['Item', 'Descrição técnica', 'Unidade', 'Quantidade'], qs.map(({ t, q }) => el('tr', null, el('td', { class: 'num' }, t.numero), el('td', { class: 'texto-longo' }, t.descricao), el('td', null, t.unidade), el('td', null, q)))),
+        (() => {
+          const temLote = irp.itens.some((t) => t.lote), temQtd = irp.itens.some((t) => t.qtd_estimada != null);
+          const cab = ['Item', temLote ? 'Lote' : null, 'Descrição', 'Unidade', temQtd ? 'Estimativa do ' + SG() : null, 'Quantidade'].filter((x) => x !== null);
+          return el('div', null, temQtd ? el('p', { class: 'ajuda' }, 'A coluna "Estimativa do ' + SG() + '" é só referência: informe a quantidade do seu ente.') : null,
+            tabela(cab, qs.map(({ t, q }) => el('tr', null, el('td', { class: 'num' }, t.numero), temLote ? el('td', null, t.lote || '') : null,
+              el('td', { class: 'texto-longo' }, t.codigo ? el('div', { class: 'ajuda' }, 'Código ' + t.codigo) : null, t.resumo || t.descricao,
+                t.resumo ? el('details', { class: 'detalhe-item' }, el('summary', null, 'Ver descrição técnica completa'), el('p', null, t.descricao)) : null),
+              el('td', null, t.unidade), temQtd ? el('td', { class: 'num' }, qtdBR(t.qtd_estimada)) : null, el('td', null, q)))));
+        })(),
         el('h3', null, 'Inclusão de itens novos (opcional)'), el('p', { class: 'ajuda' }, 'O pedido precisa de justificativa e será analisado pelo ' + SG() + '.'), caixaNovos),
       el('section', { class: 'cartao' }, el('h2', null, '3. Entrega, responsável e quem assina'),
         campo('pm-local', 'Local(is) de entrega ou de execução', f.local, 'Obrigatório.', true),
