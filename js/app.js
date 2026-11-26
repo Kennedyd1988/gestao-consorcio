@@ -1787,11 +1787,11 @@
     const copiar = el('button', { type: 'button', class: 'btn btn-claro', onclick: async () => { try { await navigator.clipboard.writeText(linkFormulario()); toast('Link do formulário copiado.'); } catch (e) { toast('Link: ' + linkFormulario()); } } }, 'Copiar link do formulário');
     rc(c, cabecalho('Solicitações recebidas', pend.length + ' aguardando análise · ' + b.solicitacoes.length + ' no total', copiar, el('a', { class: 'btn btn-claro', href: '#solicitar' }, 'Abrir o formulário ↗')),
       el('p', { class: 'msg msg-info' }, 'O órgão interessado preenche o formulário online (sem login), anexa o ofício e já vê o saldo disponível. A solicitação cai aqui; você confere e lança como pedido com um clique, e o ofício sai normalmente.'),
-      b.solicitacoes.length ? tabela(['Protocolo', 'Recebida em', 'Órgão', 'Ofício do órgão', 'Itens', 'Situação', ''], b.solicitacoes.map((x) => el('tr', null,
+      b.solicitacoes.length ? tabela(['Protocolo', 'Recebida em', 'Órgão', 'Ofício do órgão', 'Atas', 'Itens', 'Situação', ''], b.solicitacoes.map((x) => el('tr', null,
         el('td', null, el('a', { href: '#solicitacao-' + x.id }, el('strong', null, x.protocolo))),
         el('td', { class: 'num' }, x.criado_em ? new Date(x.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''),
         el('td', null, x.orgao_nome, el('span', { class: 'sub-linha' }, O.formatarCnpj(x.cnpj))),
-        el('td', null, x.oficio_numero || '—'), el('td', { class: 'num' }, (x.itens || []).length), el('td', null, etiquetaSol(x.situacao)),
+        el('td', null, x.oficio_numero || '—'), el('td', null, [...new Set((x.itens || []).map((l) => b.itensPorId[l.item_id] && b.atasPorId[b.itensPorId[l.item_id].ata_id]).filter(Boolean).map((a) => a.numero))].sort().join(', ') || '—'), el('td', { class: 'num' }, (x.itens || []).length), el('td', null, etiquetaSol(x.situacao)),
         el('td', { class: 'acoes' }, el('a', { class: 'btn ' + (x.situacao === 'recebida' || x.situacao === 'em_analise' ? 'btn-primario' : 'btn-claro') + ' btn-p', href: '#solicitacao-' + x.id }, x.situacao === 'recebida' || x.situacao === 'em_analise' ? 'Analisar' : 'Ver')))))
         : el('p', { class: 'vazio' }, 'Nenhuma solicitação recebida ainda. Envie o link do formulário aos órgãos interessados.'));
   };
@@ -1861,7 +1861,7 @@
   }
 
   // ---------------------------------------------------------------- formulário público
-  const sol = { cnpj: '', orgao: {}, conhecido: null, aderido: {}, ataSel: '', qtd: {}, oficio_numero: '', oficio_data: '', finalidade: '', arquivos: {}, declaracao: false, atas: null };
+  const sol = { cnpj: '', orgao: {}, conhecido: null, aderido: {}, atasSel: [], qtd: {}, oficio_numero: '', oficio_data: '', finalidade: '', arquivos: {}, declaracao: false, atas: null };
   async function telaPublica() {
     const c = $('conteudo-publico');
     if (/^#consultar/.test(location.hash)) return telaConsulta(c);
@@ -1915,37 +1915,64 @@
     fCnpj.addEventListener('input', () => { const n = fCnpj.value.replace(/\D/g, ''); if (n.length === 14) buscarCnpj(); });
     fCnpj.addEventListener('blur', buscarCnpj);
 
-    // 2. Itens
-    const selAta = sel([['', 'Escolha a ata…'], ...atas.map((a) => [a.id, 'ARP ' + a.numero + ' · ' + a.detentora + ' · ' + (a.objeto || 'Pregão ' + a.pregao)])], sol.ataSel);
-    const areaItens = el('div'), resumo = el('div', { class: 'resumo-solicitacao' });
-    selAta.addEventListener('change', () => { sol.ataSel = selAta.value; desenharItens(); });
+    // 2. Itens (uma ou várias atas no mesmo pedido)
+    sol.atasSel = (sol.atasSel || []).filter((id) => atas.some((a) => a.id === id));
+    const opcoesAta = () => [['', sol.atasSel.length ? '+ Adicionar outra ata ao pedido…' : 'Escolha a ata…'],
+      ...atas.filter((a) => !sol.atasSel.includes(a.id)).map((a) => [a.id, 'ARP ' + a.numero + ' · ' + a.detentora + ' · ' + (a.objeto || 'Pregão ' + a.pregao)])];
+    const selAta = sel(opcoesAta(), '');
+    const chips = el('div', { class: 'chips-atas' }), dicaAtas = el('div'), areaItens = el('div'), resumo = el('div', { class: 'resumo-solicitacao' });
+    selAta.addEventListener('change', () => {
+      const id = selAta.value; if (!id || sol.atasSel.includes(id)) return;
+      sol.atasSel.push(id);
+      const a = atas.find((x) => x.id === id);
+      const irmas = atas.filter((x) => x.pregao === a.pregao && !sol.atasSel.includes(x.id));
+      rc(dicaAtas, irmas.length ? el('p', { class: 'msg msg-info' }, 'O Pregão ' + a.pregao + ' tem também ' + irmas.map((x) => 'ARP ' + x.numero + ' (' + x.detentora + ')').join(', ') + '. Se o seu pedido incluir, adicione no campo acima.') : null);
+      desenharItens();
+    });
+    function tirarAta(id) {
+      sol.atasSel = sol.atasSel.filter((x) => x !== id);
+      const a = atas.find((x) => x.id === id); if (a) a.itens.forEach((i) => delete sol.qtd[i.id]);
+      rc(dicaAtas); desenharItens();
+    }
     function desenharItens() {
-      const a = atas.find((x) => x.id === sol.ataSel);
-      if (!a) { rc(areaItens, el('p', { class: 'vazio' }, 'Escolha a ata para ver os itens e o saldo disponível.')); atualizarResumo(); return; }
+      rc(selAta, ...opcoesAta().map(([v, t]) => el('option', { value: v }, t))); selAta.value = ''; selAta.hidden = sol.atasSel.length >= atas.length;
+      rc(chips, ...sol.atasSel.map((id) => { const a = atas.find((x) => x.id === id);
+        return el('span', { class: 'chip-ata' }, 'ARP ' + a.numero, el('button', { type: 'button', 'aria-label': 'Tirar a ARP ' + a.numero + ' do pedido', onclick: () => tirarAta(id) }, '×')); }));
+      if (!sol.atasSel.length) { rc(areaItens, el('p', { class: 'vazio' }, 'Escolha a ata para ver os itens e o saldo disponível. Pode adicionar mais de uma: a resposta sai num ofício só.')); atualizarResumo(); return; }
       const semCnpj = sol.cnpj.length !== 14;
-      rc(areaItens,
-        el('p', { class: 'ajuda' }, 'Contratado: ', el('strong', null, a.detentora), a.vigencia_fim ? ' · Ata vigente até ' + R.dataBR(a.vigencia_fim) : '', semCnpj ? ' · Informe o CNPJ acima para ver o saldo do seu órgão.' : ''),
-        el('div', { class: 'tabela-caixa', 'data-sem-paginas': '1' }, el('table', { class: 'tabela' },
-          el('thead', null, el('tr', null, ['Item', 'Descrição', 'Und.', 'Preço unit. (R$)', 'Disponível para o seu órgão', 'Quantidade'].map((t, k) => el('th', { scope: 'col', class: k === 0 || k === 3 || k === 4 ? 'num' : null }, t)))),
-          el('tbody', null, a.itens.map((i) => {
+      rc(areaItens, semCnpj ? el('p', { class: 'msg msg-falta' }, 'Informe o CNPJ acima para ver o saldo do seu órgão e digitar as quantidades.') : null,
+        ...sol.atasSel.map((id) => {
+          const a = atas.find((x) => x.id === id);
+          const busca = el('input', { type: 'search', class: 'busca', placeholder: 'Filtrar itens desta ata', 'aria-label': 'Filtrar itens da ARP ' + a.numero, style: 'max-width:320px;height:38px', hidden: a.itens.length < 8 });
+          const linhas = a.itens.map((i) => {
             const d = disp(i);
-            const inp = el('input', { type: 'number', class: 'qtd', min: '0', step: 'any', inputmode: 'decimal', value: sol.qtd[i.id] ?? '', 'aria-label': 'Quantidade do item ' + i.numero, disabled: semCnpj || d <= 0 ? true : null });
+            const inp = el('input', { type: 'number', class: 'qtd', min: '0', step: 'any', inputmode: 'decimal', value: sol.qtd[i.id] ?? '', 'aria-label': 'Quantidade do item ' + i.numero + ' da ARP ' + a.numero, disabled: semCnpj || d <= 0 ? true : null });
             const aviso = el('span', { class: 'sub-linha' });
             const conferir = () => { const q = Number(inp.value); const ex = q > d + 1e-9; inp.classList.toggle('invalido', ex); aviso.textContent = ex ? 'Acima do disponível (máx. ' + R.num(d, 2) + ')' : ''; aviso.className = 'sub-linha' + (ex ? ' ajuda-erro' : ''); };
             inp.addEventListener('input', () => { if (inp.value === '' || Number(inp.value) <= 0) delete sol.qtd[i.id]; else sol.qtd[i.id] = inp.value; conferir(); atualizarResumo(); });
             conferir();
-            return el('tr', null, el('td', { class: 'num' }, i.numero), el('td', { class: 'desc' }, i.descricao), el('td', null, i.unidade || ''),
+            return el('tr', { 'data-busca': normalizar(i.numero + ' ' + i.descricao), 'data-linha': i.id }, el('td', { class: 'num' }, i.numero), el('td', { class: 'desc' }, i.descricao), el('td', null, i.unidade || ''),
               el('td', { class: 'num' }, i.preco_unitario != null ? R.moeda(i.preco_unitario) : '—'),
               el('td', { class: 'num' + (d <= 0 ? ' saldo-zero' : '') }, semCnpj ? '—' : d > 0 ? R.num(d, 2) : 'esgotado'), el('td', null, inp, aviso));
-          })))));
+          });
+          busca.addEventListener('input', () => { const t = normalizar(busca.value); linhas.forEach((tr) => (tr.hidden = t && !tr.dataset.busca.includes(t) && !(Number(sol.qtd[tr.dataset.linha]) > 0))); });
+          return el('div', { class: 'grupo-ata' },
+            el('h3', null, 'ARP ' + a.numero, el('span', { class: 'sub-linha' }, 'Contratado: ' + a.detentora + ' · Pregão ' + a.pregao + (a.vigencia_fim ? ' · vigente até ' + R.dataBR(a.vigencia_fim) : '')),
+              el('button', { type: 'button', class: 'link btn-texto-perigo', onclick: () => tirarAta(id) }, 'Tirar esta ata')),
+            busca,
+            el('div', { class: 'tabela-caixa', 'data-sem-paginas': '1' }, el('table', { class: 'tabela' },
+              el('thead', null, el('tr', null, ['Item', 'Descrição', 'Und.', 'Preço unit. (R$)', 'Disponível para o seu órgão', 'Quantidade'].map((t, k) => el('th', { scope: 'col', class: k === 0 || k === 3 || k === 4 ? 'num' : null }, t)))),
+              el('tbody', null, linhas))));
+        }));
       atualizarResumo();
     }
-    function itensEscolhidos() { return Object.entries(sol.qtd).filter(([id, q]) => itensPorId[id] && Number(q) > 0).map(([id, q]) => ({ item_id: id, qtd: Number(q) })); }
+    function itensEscolhidos() { return Object.entries(sol.qtd).filter(([id, q]) => itensPorId[id] && sol.atasSel.includes(itensPorId[id].ata.id) && Number(q) > 0).map(([id, q]) => ({ item_id: id, qtd: Number(q) })); }
     function atualizarResumo() {
       const ls = itensEscolhidos();
       if (!ls.length) { rc(resumo); return; }
       let valor = 0;
-      rc(resumo, el('h3', null, 'Itens no seu pedido (' + ls.length + ')'),
+      const nAtas = new Set(ls.map((l) => itensPorId[l.item_id].ata.id)).size;
+      rc(resumo, el('h3', null, 'Itens no seu pedido (' + ls.length + (nAtas > 1 ? ', em ' + nAtas + ' atas · resposta num ofício só' : '') + ')'),
         el('ul', { class: 'lista-resumo' }, ls.map((l) => { const i = itensPorId[l.item_id]; if (i.preco_unitario != null) valor += l.qtd * i.preco_unitario;
           return el('li', null, el('span', null, 'ARP ' + i.ata.numero + ' · item ' + i.numero + ' – ' + i.descricao), el('strong', null, R.num(l.qtd, 2) + ' ' + (i.unidade || ''))); })),
         valor ? el('p', { class: 'ajuda' }, 'Valor estimado: R$ ' + R.moeda(valor)) : null);
@@ -1968,7 +1995,7 @@
       if (!marcarErro(f.email, /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.value.trim()) ? '' : 'E-mail inválido.')) return;
       if (!marcarErro(f.telefone, telefoneValido(f.telefone.value) ? '' : 'Telefone incompleto: informe o DDD e o número, como (84) 99999-9999.')) return;
       const ls = itensEscolhidos();
-      if (!ls.length) { rc(msgEnvio, el('p', { class: 'msg msg-erro' }, 'Escolha a ata e informe a quantidade de pelo menos um item.')); selAta.focus(); return; }
+      if (!ls.length) { rc(msgEnvio, el('p', { class: 'msg msg-erro' }, 'Adicione a ata (ou as atas) e informe a quantidade de pelo menos um item.')); selAta.focus(); return; }
       const acima = ls.filter((l) => l.qtd > disp(itensPorId[l.item_id]) + 1e-9);
       if (acima.length) { rc(msgEnvio, el('p', { class: 'msg msg-erro' }, acima.length + ' item(ns) acima do disponível para o seu órgão. Ajuste as quantidades.')); return; }
       if (!marcarErro(fOf, fOf.value.trim() ? '' : 'Informe o número do ofício.')) return;
@@ -1982,7 +2009,7 @@
           oficio_numero: fOf.value.trim(), oficio_data: fOfData.value || null, finalidade: fFin.value.trim() || null, itens: ls, declaracao: true }, Object.values(sol.arquivos).filter(Boolean));
         if (estado.base) await recarregar();
         const cnpjEnviado = sol.cnpj;
-        Object.assign(sol, { qtd: {}, arquivos: {}, declaracao: false, oficio_numero: '', oficio_data: '', finalidade: '', atas: null });
+        Object.assign(sol, { qtd: {}, atasSel: [], arquivos: {}, declaracao: false, oficio_numero: '', oficio_data: '', finalidade: '', atas: null });
         rc(c, el('section', { class: 'cartao cartao-sucesso' },
           el('div', { class: 'sucesso-icone', 'aria-hidden': 'true' }, '✓'), el('h1', null, 'Solicitação enviada'),
           el('p', null, 'Guarde o número do protocolo:'), el('p', { class: 'protocolo' }, protocolo),
@@ -1994,19 +2021,19 @@
 
     const passo = (n, titulo, ...filhos) => el('section', { class: 'cartao passo-publico' }, el('h2', null, el('span', { class: 'passo-num' }, n), titulo), filhos);
     rc(c,
-      el('div', { class: 'intro-publica' }, el('h1', null, 'Solicitar adesão a Ata de Registro de Preços'),
+      el('div', { class: 'intro-publica' }, el('h1', null, 'Solicitar adesão a Atas de Registro de Preços'),
         el('p', { class: 'sub' }, 'Para órgãos e entidades que desejam aderir, como não participantes, às Atas de Registro de Preços do ' + sigla() + ' (art. 86, § 2º, da Lei nº 14.133/2021 e regulamento do Sistema de Registro de Preços do consórcio).'),
         el('p', null, el('a', { class: 'link', href: '#consultar' }, 'Já enviou? Consulte o andamento pelo protocolo'),
           estado.usuario ? [' · ', el('a', { class: 'link', href: '#solicitacoes' }, 'Voltar ao painel')] : null)),
       passo(1, 'Órgão solicitante', campo('sp-cnpj', 'CNPJ do órgão ou entidade', fCnpj, 'Cada CNPJ tem limite próprio de 50% do registrado por item.', true), fichaOrg, blocoDados),
-      passo(2, 'Ata e quantidades', atas.length
-        ? [campo('sp-ata', 'Ata de registro de preços', selAta, 'Só aparecem atas vigentes. Pode juntar itens de mais de uma ata: escolha outra e continue.'), areaItens, resumo]
+      passo(2, 'Atas e quantidades', atas.length
+        ? [campo('sp-ata', 'Atas de registro de preços', selAta, 'Só aparecem atas vigentes. Pode pedir adesão a várias atas de uma vez: adicione cada uma e digite as quantidades.'), chips, dicaAtas, areaItens, resumo]
         : el('p', { class: 'msg msg-info' }, 'No momento não há ata de registro de preços vigente disponível para adesão.' + (ident().email ? ' Em caso de dúvida, fale com o ' + sigla() + ' pelo e-mail ' + ident().email + '.' : ''))),
       passo(3, 'Ofício e documentos',
         el('div', { class: 'grade-campos' }, campo('sp-of', 'Nº do ofício de solicitação', fOf, null, true), campo('sp-ofdata', 'Data do ofício', fOfData)),
         campo('sp-fin', 'Finalidade da adesão', fFin, 'Para que serão usados os itens. Entra no ofício de resposta.'),
         el('div', { class: 'grade-campos' }, campo('sp-arqof', 'Ofício assinado (PDF)', fArqOf, null, true), campo('sp-arqjust', 'Justificativa da vantagem e pesquisa de preços (PDF)', fArqJust, 'Recomendado (art. 28, I e II, da Resolução 018/2023).')),
-        el('label', { class: 'checkbox declaracao' }, fDecl, ' Declaro que este órgão demonstrará a vantagem da adesão e a compatibilidade dos preços registrados com os de mercado (art. 23 da Lei nº 14.133/2021), e que a contratação dependerá da aceitação do contratado e será formalizada dentro da vigência da ata.'),
+        el('label', { class: 'checkbox declaracao' }, fDecl, ' Declaro que este órgão demonstrará a vantagem da adesão e a compatibilidade dos preços registrados com os de mercado (art. 23 da Lei nº 14.133/2021), e que a contratação dependerá da aceitação do contratado e será formalizada dentro da vigência da(s) ata(s).'),
         msgEnvio, btnEnviar));
     desenharItens();
     if (sol.cnpj.length === 14 && sol.conhecido === null) buscarCnpj();
